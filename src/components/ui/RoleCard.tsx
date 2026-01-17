@@ -1,17 +1,13 @@
 import { motion } from "framer-motion";
-import { Search, FileQuestion, Star } from "lucide-react";
-import { useState } from "react";
+import { Search, FileQuestion } from "lucide-react";
 
 interface RoleCardProps {
   role: "searcher" | "guesser";
   selected?: boolean;
   onClick?: () => void;
-  difficulty?: number;
 }
 
-export function RoleCard({ role, selected = false, onClick, difficulty = 3 }: RoleCardProps) {
-  const [isFlipped, setIsFlipped] = useState(false);
-
+export function RoleCard({ role, selected = false, onClick }: RoleCardProps) {
   const roles = {
     searcher: {
       title: "SEARCHER",
@@ -37,17 +33,11 @@ export function RoleCard({ role, selected = false, onClick, difficulty = 3 }: Ro
   return (
     <motion.div
       onClick={onClick}
-      onHoverStart={() => setIsFlipped(true)}
-      onHoverEnd={() => setIsFlipped(false)}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
-      className={`
-        relative cursor-pointer perspective-1000 w-full max-w-xs
-      `}
+      className="relative cursor-pointer w-full max-w-xs"
     >
       <motion.div
-        animate={{ rotateY: isFlipped ? 10 : 0 }}
-        transition={{ duration: 0.3 }}
         className={`
           relative p-6 rounded-xl border-2 transition-all duration-300
           bg-gradient-to-br ${config.bgGradient}
@@ -80,15 +70,9 @@ export function RoleCard({ role, selected = false, onClick, difficulty = 3 }: Ro
           {config.description}
         </p>
 
-        {/* Difficulty meter */}
-        <div className="flex items-center justify-center gap-1">
-          <span className="font-mono text-xs text-muted-foreground mr-2">DIFFICULTY:</span>
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Star
-              key={i}
-              className={`w-4 h-4 ${i < difficulty ? "text-accent fill-accent" : "text-muted"}`}
-            />
-          ))}
+        {/* Select button indicator */}
+        <div className={`text-center font-mono text-xs ${selected ? `text-${config.color}` : 'text-muted-foreground'}`}>
+          {selected ? '✓ SELECTED' : 'SELECT ROLE'}
         </div>
 
         {/* Decorative corners */}
