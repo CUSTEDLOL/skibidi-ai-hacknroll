@@ -1,11 +1,14 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { FileText, Sparkles, HelpCircle, Calendar, User, MapPin, Hash } from "lucide-react";
 import { Timer } from "../ui/Timer";
 import { TerminalInput } from "../ui/TerminalInput";
 import { SearchResult } from "../ui/SearchResult";
 import { GlowButton } from "../ui/GlowButton";
 import { ClassifiedStamp } from "../ui/ClassifiedStamp";
+import { RhythmControl } from "../ui/RhythmControl";
+import { useRhythm } from "@/hooks/use-rhythm";
+import { AudioEnablePrompt } from "../ui/AudioEnablePrompt";
 
 export interface RedactedResult {
   source: string;
@@ -25,6 +28,8 @@ interface GuesserScreenProps {
   guessesRemaining: number;
   redactedResults?: RedactedResult[];
   extractedClues?: ExtractedClue[];
+  rhythmMode?: boolean;
+  bpm?: number;
   onGuess?: (guess: string) => void;
   onRequestHint?: () => void;
   timeLimit?: number;
@@ -43,6 +48,8 @@ export function GuesserScreen({
   guessesRemaining,
   redactedResults = [],
   extractedClues = [],
+  rhythmMode = false,
+  bpm = 120,
   onGuess,
   onRequestHint,
   timeLimit = 120,
@@ -50,6 +57,22 @@ export function GuesserScreen({
   const [guessHistory, setGuessHistory] = useState<{ guess: string; correct: boolean }[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showWrongAnimation, setShowWrongAnimation] = useState(false);
+
+  // Rhythm system
+  const rhythm = useRhythm(bpm, rhythmMode);
+
+  // Initialize audio on mount if rhythm mode enabled
+  useEffect(() => {
+    if (rhythmMode && rhythm.needsUserGesture) {
+      // Audio will be initialized on first user interaction
+      const handleClick = () => {
+        rhythm.initializeAudio();
+        document.removeEventListener('click', handleClick);
+      };
+      document.addEventListener('click', handleClick);
+      return () => document.removeEventListener('click', handleClick);
+    }
+  }, [rhythmMode, rhythm]);
 
   const handleGuess = async (guess: string) => {
     setIsSubmitting(true);
@@ -67,6 +90,13 @@ export function GuesserScreen({
 
   return (
     <div className={`min-h-screen pt-20 pb-8 px-4 ${showWrongAnimation ? 'error-shake' : ''}`}>
+      {/* Audio Enable Prompt */}
+      <AnimatePresence>
+        {rhythmMode && rhythm.needsUserGesture && (
+          <AudioEnablePrompt onEnable={rhythm.initializeAudio} />
+        )}
+      </AnimatePresence>
+
       <div className="container mx-auto max-w-6xl">
         {/* Top HUD */}
         <motion.div
@@ -83,8 +113,20 @@ export function GuesserScreen({
             <ClassifiedStamp type="redacted" className="hidden sm:block" animate={false} />
           </div>
 
-          {/* Timer */}
-          <Timer seconds={timeLimit} size="sm" />
+          {/* Center Group: Timer and Rhythm */}
+          <div className="flex items-center gap-4">
+            <Timer seconds={timeLimit} size="sm" />
+            
+            {/* Rhythm Control */}
+            {rhythmMode && (
+              <RhythmControl
+                bpm={bpm}
+                isPlaying={rhythm.isPlaying}
+                onVolumeChange={rhythm.setVolume}
+                onMetronomeToggle={rhythm.toggleMetronome}
+              />
+            )}
+          </div>
 
           {/* Guesses Remaining */}
           <div className="px-4 py-2 bg-card border border-border rounded-lg">

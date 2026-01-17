@@ -146,8 +146,11 @@ const Index = () => {
               secretTopic={demoTopic}
               forbiddenWords={demoForbiddenWords}
               round={2}
-              totalRounds={5}
+              totalRounds={gameConfig.rounds === 'endless' ? 999 : gameConfig.rounds}
               searchesRemaining={3}
+              rhythmMode={gameConfig.rhythmMode}
+              bpm={gameConfig.bpm}
+              timeLimit={gameConfig.timePerRound}
               onSubmit={handleSubmitSearch}
             />
           </motion.div>
@@ -162,8 +165,11 @@ const Index = () => {
           >
             <GuesserScreen
               round={2}
-              totalRounds={5}
+              totalRounds={gameConfig.rounds === 'endless' ? 999 : gameConfig.rounds}
               guessesRemaining={5}
+              rhythmMode={gameConfig.rhythmMode}
+              bpm={gameConfig.bpm}
+              timeLimit={gameConfig.timePerRound}
               onGuess={handleGuess}
             />
           </motion.div>

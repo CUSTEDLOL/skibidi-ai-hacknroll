@@ -1,11 +1,15 @@
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AlertTriangle, X, History, Lightbulb, Send, Search, PenLine, Plus, Trash2 } from "lucide-react";
 import { Timer } from "../ui/Timer";
 import { TerminalInput } from "../ui/TerminalInput";
 import { SearchResult as SearchResultCard, SearchResultSkeleton } from "../ui/SearchResult";
 import { GlowButton } from "../ui/GlowButton";
 import { ClassifiedStamp } from "../ui/ClassifiedStamp";
+import { RhythmControl } from "../ui/RhythmControl";
+import { useRhythm } from "@/hooks/use-rhythm";
+import { AudioEnablePrompt } from "../ui/AudioEnablePrompt";
+import { AnimatePresence } from "framer-motion";
 
 export interface SearchResultData {
   source: string;
@@ -22,6 +26,8 @@ interface SearcherScreenProps {
   round: number;
   totalRounds: number;
   searchesRemaining: number;
+  rhythmMode?: boolean;
+  bpm?: number;
   onSearch?: (query: string) => Promise<SearchResultData[]>;
   onSubmit?: () => void;
   onSendKeywords?: (keywords: string[]) => void;
@@ -34,6 +40,8 @@ export function SearcherScreen({
   round,
   totalRounds,
   searchesRemaining,
+  rhythmMode = false,
+  bpm = 120,
   onSearch,
   onSubmit,
   onSendKeywords,
@@ -47,6 +55,22 @@ export function SearcherScreen({
   const [keywords, setKeywords] = useState<string[]>([]);
   const [keywordInput, setKeywordInput] = useState("");
   const [keywordError, setKeywordError] = useState<string | null>(null);
+
+  // Rhythm system
+  const rhythm = useRhythm(bpm, rhythmMode);
+
+  // Initialize audio on mount if rhythm mode enabled
+  useEffect(() => {
+    if (rhythmMode && rhythm.needsUserGesture) {
+      // Audio will be initialized on first user interaction
+      const handleClick = () => {
+        rhythm.initializeAudio();
+        document.removeEventListener('click', handleClick);
+      };
+      document.addEventListener('click', handleClick);
+      return () => document.removeEventListener('click', handleClick);
+    }
+  }, [rhythmMode, rhythm]);
 
   const handleSearch = async (query: string) => {
     setIsSearching(true);
@@ -109,6 +133,13 @@ export function SearcherScreen({
 
   return (
     <div className="min-h-screen pt-20 pb-8 px-4">
+      {/* Audio Enable Prompt */}
+      <AnimatePresence>
+        {rhythmMode && rhythm.needsUserGesture && (
+          <AudioEnablePrompt onEnable={rhythm.initializeAudio} />
+        )}
+      </AnimatePresence>
+
       <div className="container mx-auto max-w-6xl">
         {/* Top HUD */}
         <motion.div
@@ -125,8 +156,20 @@ export function SearcherScreen({
             <ClassifiedStamp type="classified" className="hidden sm:block" animate={false} />
           </div>
 
-          {/* Timer */}
-          <Timer seconds={timeLimit} size="sm" />
+          {/* Center Group: Timer and Rhythm */}
+          <div className="flex items-center gap-4">
+            <Timer seconds={timeLimit} size="sm" />
+            
+            {/* Rhythm Control */}
+            {rhythmMode && (
+              <RhythmControl
+                bpm={bpm}
+                isPlaying={rhythm.isPlaying}
+                onVolumeChange={rhythm.setVolume}
+                onMetronomeToggle={rhythm.toggleMetronome}
+              />
+            )}
+          </div>
 
           {/* Searches Remaining */}
           <div className="px-4 py-2 bg-card border border-border rounded-lg">
