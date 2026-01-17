@@ -76,27 +76,27 @@ export function HomeScreen({
         <motion.button
           onClick={onQuickJoin}
           disabled={isSearching}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35 }}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
-          className="relative w-full p-6 bg-gradient-to-r from-primary/20 to-accent/20 border-2 border-primary/50 
-            rounded-lg hover:border-primary transition-all group overflow-hidden disabled:opacity-50"
+          className="flex flex-col items-center gap-2 p-5 bg-card border border-primary/50 rounded-lg
+            hover:border-primary hover:bg-primary/5 transition-all group disabled:opacity-50"
         >
-          <div className="absolute inset-0 bg-gradient-to-r from-primary/10 to-accent/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-          <div className="relative flex flex-col items-center gap-2">
-            {isSearching ? (
-              <>
-                <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                <span className="font-mono text-lg font-bold text-foreground">SEARCHING FOR GAME...</span>
-                <span className="font-mono text-sm text-muted-foreground">Finding available lobbies</span>
-              </>
-            ) : (
-              <>
-                <Gamepad2 className="w-8 h-8 text-primary" />
-                <span className="font-mono text-lg font-bold text-foreground">QUICK JOIN</span>
-                <span className="font-mono text-sm text-muted-foreground">Jump into a random game</span>
-              </>
-            )}
-          </div>
+          {isSearching ? (
+            <>
+              <Loader2 className="w-7 h-7 text-primary animate-spin" />
+              <span className="font-mono text-sm font-semibold text-foreground">SEARCHING FOR GAME...</span>
+              <span className="font-mono text-xs text-muted-foreground">Finding available lobbies</span>
+            </>
+          ) : (
+            <>
+              <Gamepad2 className="w-7 h-7 text-primary group-hover:text-primary transition-colors" />
+              <span className="font-mono text-sm font-semibold text-foreground">QUICK JOIN</span>
+              <span className="font-mono text-xs text-muted-foreground">Jump into a random game</span>
+            </>
+          )}
         </motion.button>
 
         {/* Create Room & Enter Code Row */}
