@@ -19,6 +19,7 @@ from search_utils import (
     redact_with_gemini,
     get_random_topic_data,
     validate_query_logic,
+    identify_redacted_terms,
     GOOGLE_API_KEY,
     GEMINI_API_KEY
 )
@@ -60,6 +61,10 @@ class GameState:
     game_active: bool = False
     # List of {player_sid, guess, accepted, timestamp}
     guesses: List[Dict] = field(default_factory=list)
+    # Cache for search results: {query: {unredacted, redacted, indicators}}
+    search_cache: Dict[str, Dict] = field(default_factory=dict)
+    # List of query indices that have been sent to guessers
+    sent_results: List[int] = field(default_factory=list)
 
 
 # Store all game rooms
@@ -341,21 +346,32 @@ def handle_searcher_select_secret_word(data: dict):
 @socketio.on('searcher_make_search')
 def handle_searcher_make_search(data: dict):
     """Searcher makes a search query"""
+    print(f"\n[DEBUG] ========== searcher_make_search ==========")
+    print(f"[DEBUG] Request from: {request.sid}")
+    print(f"[DEBUG] Data received: {data}")
+
     room_key = data.get('room_key', '').upper().strip()
     search_query = data.get('query', '').strip()
+
+    print(f"[DEBUG] Room key: {room_key}")
+    print(f"[DEBUG] Search query: {search_query}")
 
     room = get_room(room_key)
     player = get_player_in_room(room_key, request.sid)
 
     if not player or player.role != Role.SEARCHER:
+        print(
+            f"[DEBUG] ERROR: Player not authorized (role: {player.role if player else 'None'})")
         emit('error', {'message': 'Only searcher can make searches'})
         return
 
     if not room.game_active:
+        print(f"[DEBUG] ERROR: Game not active")
         emit('error', {'message': 'Game is not active'})
         return
 
     if not search_query:
+        print(f"[DEBUG] ERROR: Empty search query")
         emit('error', {'message': 'Search query is required'})
         return
 
@@ -363,7 +379,11 @@ def handle_searcher_make_search(data: dict):
     validation_result = validate_query_logic(
         search_query, room.forbidden_words)
 
+    print(f"[DEBUG] Validation result: {validation_result}")
+
     if not validation_result['valid']:
+        print(
+            f"[DEBUG] Query validation failed: {validation_result['violations']}")
         emit('search_result', {
             'query': search_query,
             'results': [],
@@ -373,87 +393,185 @@ def handle_searcher_make_search(data: dict):
         })
         return
 
-    # Perform search using the existing search function
-    try:
-        results = google_search(search_query, num_results=5)
+    # Check cache first
+    cache_key = search_query.lower().strip()
+    cached_data = room.search_cache.get(cache_key)
 
-        # Store the search query and results
-        search_entry = {
-            'query': search_query,
-            'results': results,
-            'timestamp': len(room.search_queries)
-        }
-        room.search_queries.append(search_entry)
+    print(f"[DEBUG] Cache key: {cache_key}")
+    print(f"[DEBUG] Cache hit: {cached_data is not None}")
 
+    if cached_data:
+        # Use cached results
+        results = cached_data['unredacted']
+        results_with_indicators = cached_data['indicators']
+
+        print(f"[DEBUG] Using cached results: {len(results)} items")
         print(
-            f"Searcher {request.sid} made search: {search_query} ({len(results)} results)")
+            f"Searcher {request.sid} used cached search: {search_query} ({len(results)} results)")
+    else:
+        # Perform new search
+        print(f"[DEBUG] Performing new search...")
+        try:
+            results = google_search(search_query, num_results=5)
+            print(f"[DEBUG] Google search returned: {len(results)} results")
 
-        emit('search_result', {
-            'query': search_query,
-            'results': results,
-            'count': len(results),
-            'valid': True,
-            'query_index': len(room.search_queries) - 1,
-            'message': f'Search completed: {len(results)} results'
-        })
+            # Generate redaction indicators for partial redaction display
+            results_with_indicators = identify_redacted_terms(
+                results,
+                room.forbidden_words,
+                search_query,
+                room.secret_topic
+            )
+            print(f"[DEBUG] Generated redaction indicators")
 
-    except Exception as e:
-        print(f"Search error: {e}")
-        emit('error', {'message': f'Search failed: {str(e)}'})
+            # Generate fully redacted version for guessers
+            redacted_results = redact_with_gemini(
+                results,
+                room.forbidden_words,
+                search_query,
+                room.secret_topic
+            )
+            print(f"[DEBUG] Generated redacted version for guessers")
+
+            # Store in cache
+            room.search_cache[cache_key] = {
+                'unredacted': results,
+                'indicators': results_with_indicators,
+                'redacted': redacted_results
+            }
+            print(
+                f"[DEBUG] Stored in cache. Cache size: {len(room.search_cache)}")
+
+            print(
+                f"Searcher {request.sid} made new search: {search_query} ({len(results)} results)")
+
+        except Exception as e:
+            print(f"[DEBUG] ERROR: Search failed: {e}")
+            import traceback
+            traceback.print_exc()
+            emit('error', {'message': f'Search failed: {str(e)}'})
+            return
+
+    # Store the search query and results
+    search_entry = {
+        'query': search_query,
+        'results': results,
+        'results_with_indicators': results_with_indicators,
+        'timestamp': len(room.search_queries)
+    }
+    room.search_queries.append(search_entry)
+
+    print(f"[DEBUG] Search history length: {len(room.search_queries)}")
+    print(f"[DEBUG] Sending results with {len(results_with_indicators)} items")
+
+    emit('search_result', {
+        'query': search_query,
+        'results': results_with_indicators,
+        'count': len(results),
+        'valid': True,
+        'query_index': len(room.search_queries) - 1,
+        'message': f'Search completed: {len(results)} results'
+    })
+
+    print(f"[DEBUG] ========== searcher_make_search END ==========\n")
 
 
 @socketio.on('searcher_select_query')
 def handle_searcher_select_query(data: dict):
-    """Searcher selects which query result to send to guessers"""
+    """Searcher selects which query result to send to guessers (auto-sends)"""
+    print(f"\n[DEBUG] ========== searcher_select_query ==========")
+    print(f"[DEBUG] Request from: {request.sid}")
+    print(f"[DEBUG] Data received: {data}")
+
     room_key = data.get('room_key', '').upper().strip()
     query_index = data.get('query_index')
+
+    print(f"[DEBUG] Room key: {room_key}")
+    print(f"[DEBUG] Query index: {query_index}")
 
     room = get_room(room_key)
     player = get_player_in_room(room_key, request.sid)
 
     if not player or player.role != Role.SEARCHER:
+        print(f"[DEBUG] ERROR: Player not authorized")
         emit('error', {'message': 'Only searcher can select query'})
         return
 
     if query_index is None or query_index < 0 or query_index >= len(room.search_queries):
+        print(
+            f"[DEBUG] ERROR: Invalid query index. Search queries length: {len(room.search_queries)}")
         emit('error', {'message': 'Invalid query index'})
         return
+
+    # Add to sent results if not already sent
+    if query_index not in room.sent_results:
+        room.sent_results.append(query_index)
+        print(
+            f"[DEBUG] Added to sent results. Total sent: {room.sent_results}")
+    else:
+        print(f"[DEBUG] Already in sent results: {room.sent_results}")
 
     room.selected_query_index = query_index
     selected_query = room.search_queries[query_index]
 
-    print(f"Searcher {request.sid} selected query index {query_index}")
+    print(f"[DEBUG] Selected query: {selected_query['query']}")
+    print(
+        f"[DEBUG] Number of guessers in room: {sum(1 for p in room.players.values() if p.role == Role.GUESSER)}")
 
-    # Redact results for guessers
-    redacted_results = redact_with_gemini(
-        selected_query['results'],
-        room.forbidden_words,
-        selected_query['query'],
-        room.secret_topic
-    )
+    # Get redacted results from cache if available
+    cache_key = selected_query['query'].lower().strip()
+    cached_data = room.search_cache.get(cache_key)
+
+    print(f"[DEBUG] Cache lookup for: {cache_key}")
+    print(f"[DEBUG] Cache hit: {cached_data is not None}")
+
+    if cached_data and 'redacted' in cached_data:
+        redacted_results = cached_data['redacted']
+        print(
+            f"[DEBUG] Using cached redacted results: {len(redacted_results)} items")
+    else:
+        print(f"[DEBUG] Generating new redacted results...")
+        # Fallback: generate redacted results
+        redacted_results = redact_with_gemini(
+            selected_query['results'],
+            room.forbidden_words,
+            selected_query['query'],
+            room.secret_topic
+        )
+        print(f"[DEBUG] Generated {len(redacted_results)} redacted results")
 
     # Notify searcher
     emit('query_selected', {
         'query_index': query_index,
+        'sent_results': room.sent_results,
         'message': 'Query selected and sent to guessers'
     })
+    print(f"[DEBUG] Notified searcher of selection")
 
-    # Send redacted results to all guessers
+    # Automatically send redacted results to all guessers
     guesser_data = {
         'redacted_results': {
             'query': '[REDACTED]',
             'results': redacted_results,
             'count': len(redacted_results)
         },
-        'message': 'New search results available'
+        'message': 'New search results available from searcher'
     }
 
+    guesser_count = 0
     for sid, p in room.players.items():
         if p.role == Role.GUESSER:
             socketio.emit('search_results_for_guesser', guesser_data, room=sid)
+            guesser_count += 1
+            print(f"[DEBUG] Sent to guesser: {sid}")
+
+    print(
+        f"[DEBUG] Auto-sent results to {guesser_count} guessers for query index {query_index}")
 
     # Send updated room state
     emit('room_state', get_room_state_for_client(room, request.sid))
+
+    print(f"[DEBUG] ========== searcher_select_query END ==========\n")
 
 
 @socketio.on('guesser_make_guess')
@@ -551,6 +669,8 @@ def handle_end_game(data: dict):
         room.search_queries = []
         room.selected_query_index = None
         room.guesses = []
+        room.search_cache = {}  # Clear cache
+        room.sent_results = []  # Clear sent results
 
         print(f"Game ended in room {room_key}")
 
@@ -569,6 +689,8 @@ def handle_end_game(data: dict):
         room.search_queries = []
         room.selected_query_index = None
         room.guesses = []
+        room.search_cache = {}  # Clear cache for new round
+        room.sent_results = []  # Clear sent results for new round
         room.game_active = False  # Will be set to True when searcher selects new word
 
         print(f"Continuing to round {room.current_round} in room {room_key}")
@@ -605,18 +727,18 @@ def handle_chat_send(data):
     try:
         room_key = data.get('lobbyId')
         message = data.get('message', '').strip()
-        
+
         if not room_key or not message:
             emit('error', {'message': 'Invalid chat data'})
             return
-            
+
         room = get_room(room_key)
         player = get_player_in_room(room_key, request.sid)
-        
+
         if not player:
             emit('error', {'message': 'Player not in room'})
             return
-            
+
         # Create chat message
         chat_msg = {
             'id': str(int(time.time() * 1000)),
@@ -625,10 +747,10 @@ def handle_chat_send(data):
             'message': message,
             'timestamp': datetime.now().isoformat()
         }
-        
+
         # Broadcast to all players in room
         broadcast_to_room(room_key, 'chat:message', chat_msg)
-        
+
     except Exception as e:
         logger.error(f"Error in chat:send: {e}")
         emit('error', {'message': 'Failed to send message'})
@@ -640,18 +762,18 @@ def handle_emote_send(data):
     try:
         room_key = data.get('lobbyId')
         emote = data.get('emote', '').strip()
-        
+
         if not room_key or not emote:
             emit('error', {'message': 'Invalid emote data'})
             return
-            
+
         room = get_room(room_key)
         player = get_player_in_room(room_key, request.sid)
-        
+
         if not player:
             emit('error', {'message': 'Player not in room'})
             return
-            
+
         # Create emote event
         emote_data = {
             'emote': emote,
@@ -659,10 +781,10 @@ def handle_emote_send(data):
             'playerName': player.username,
             'timestamp': datetime.now().isoformat()
         }
-        
+
         # Broadcast to all players in room (including sender)
         broadcast_to_room(room_key, 'emote:receive', emote_data)
-        
+
     except Exception as e:
         logger.error(f"Error in emote:send: {e}")
         emit('error', {'message': 'Failed to send emote'})

@@ -156,6 +156,61 @@ def simple_redaction(search_results, forbidden_words, search_query):
     return redacted_results
 
 
+def identify_redacted_terms(search_results, forbidden_words, search_query, secret_topic):
+    """
+    Identify which terms should be redacted and their positions in the text.
+    Returns results with redaction indicators for partial redaction display.
+    """
+    print(f"[DEBUG] identify_redacted_terms called")
+    print(f"[DEBUG] - Secret topic: {secret_topic}")
+    print(f"[DEBUG] - Forbidden words: {forbidden_words}")
+    print(f"[DEBUG] - Search query: {search_query}")
+    print(f"[DEBUG] - Number of results: {len(search_results)}")
+
+    results_with_indicators = []
+
+    # Combine all words to redact
+    words_to_redact = set()
+    words_to_redact.update(word.lower()
+                           for word in forbidden_words if len(word) > 2)
+    words_to_redact.update(word.lower()
+                           for word in search_query.split() if len(word) > 2)
+    words_to_redact.add(secret_topic.lower())
+
+    print(f"[DEBUG] - Words to redact: {words_to_redact}")
+
+    for result in search_results:
+        result_copy = result.copy()
+        result_copy['redactedTerms'] = {'title': [], 'snippet': []}
+
+        # Find redacted terms in title and snippet
+        for field in ['title', 'snippet']:
+            if field not in result:
+                continue
+
+            text = result[field]
+            redacted_positions = []
+
+            # Find all occurrences of words to redact
+            for word in words_to_redact:
+                pattern = re.compile(
+                    r'\b' + re.escape(word) + r'\b', re.IGNORECASE)
+                for match in pattern.finditer(text):
+                    redacted_positions.append({
+                        'start': match.start(),
+                        'end': match.end(),
+                        'word': match.group()
+                    })
+
+            # Sort by position
+            redacted_positions.sort(key=lambda x: x['start'])
+            result_copy['redactedTerms'][field] = redacted_positions
+
+        results_with_indicators.append(result_copy)
+
+    return results_with_indicators
+
+
 def validate_query_logic(query, forbidden_words):
     """
     Validate if a search query contains forbidden words

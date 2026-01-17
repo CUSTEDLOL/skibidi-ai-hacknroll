@@ -3,15 +3,28 @@ import { useState } from "react";
 import { AlertTriangle, X, History, Lightbulb, Send } from "lucide-react";
 import { Timer } from "../ui/Timer";
 import { TerminalInput } from "../ui/TerminalInput";
-import { SearchResult as SearchResultCard, SearchResultSkeleton } from "../ui/SearchResult";
+import {
+  SearchResult as SearchResultCard,
+  SearchResultSkeleton,
+} from "../ui/SearchResult";
 import { GlowButton } from "../ui/GlowButton";
 import { ClassifiedStamp } from "../ui/ClassifiedStamp";
+
+interface RedactedTerm {
+  start: number;
+  end: number;
+  word: string;
+}
 
 export interface SearchResultData {
   source: string;
   title: string;
   snippet: string;
   confidence?: number;
+  redactedTerms?: {
+    title: RedactedTerm[];
+    snippet: RedactedTerm[];
+  };
 }
 
 interface SearcherScreenProps {
@@ -39,11 +52,12 @@ export function SearcherScreen({
   const [results, setResults] = useState<SearchResultData[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
   const handleSearch = async (query: string) => {
     setIsSearching(true);
     setShowResults(false);
-    setSearchHistory(prev => [...prev, query]);
+    setSearchHistory((prev) => [...prev, query]);
 
     try {
       if (onSearch) {
@@ -59,6 +73,14 @@ export function SearcherScreen({
     setShowResults(true);
   };
 
+  const handleResultClick = (index: number) => {
+    setSelectedIndex(index);
+    // Auto-send to guessers when selected
+    if (onSubmit) {
+      onSubmit();
+    }
+  };
+
   return (
     <div className="min-h-screen pt-20 pb-8 px-4">
       <div className="container mx-auto max-w-6xl">
@@ -71,10 +93,18 @@ export function SearcherScreen({
           {/* Round Info */}
           <div className="flex items-center gap-4">
             <div className="px-4 py-2 bg-card border border-border rounded-lg">
-              <span className="font-mono text-sm text-muted-foreground">ROUND </span>
-              <span className="font-mono text-lg font-bold text-primary">{round}/{totalRounds}</span>
+              <span className="font-mono text-sm text-muted-foreground">
+                ROUND{" "}
+              </span>
+              <span className="font-mono text-lg font-bold text-primary">
+                {round}/{totalRounds}
+              </span>
             </div>
-            <ClassifiedStamp type="classified" className="hidden sm:block" animate={false} />
+            <ClassifiedStamp
+              type="classified"
+              className="hidden sm:block"
+              animate={false}
+            />
           </div>
 
           {/* Timer */}
@@ -82,8 +112,12 @@ export function SearcherScreen({
 
           {/* Searches Remaining */}
           <div className="px-4 py-2 bg-card border border-border rounded-lg">
-            <span className="font-mono text-sm text-muted-foreground">SEARCHES: </span>
-            <span className="font-mono text-lg font-bold text-accent">{searchesRemaining}</span>
+            <span className="font-mono text-sm text-muted-foreground">
+              SEARCHES:{" "}
+            </span>
+            <span className="font-mono text-lg font-bold text-accent">
+              {searchesRemaining}
+            </span>
           </div>
         </motion.div>
 
@@ -97,8 +131,14 @@ export function SearcherScreen({
               className="bg-card border border-primary/30 rounded-xl p-6"
             >
               <div className="flex items-center justify-between mb-4">
-                <span className="font-mono text-xs text-muted-foreground">YOUR SECRET TOPIC</span>
-                <ClassifiedStamp type="top-secret" className="text-xs" animate={false} />
+                <span className="font-mono text-xs text-muted-foreground">
+                  YOUR SECRET TOPIC
+                </span>
+                <ClassifiedStamp
+                  type="top-secret"
+                  className="text-xs"
+                  animate={false}
+                />
               </div>
               <h2 className="text-2xl font-bold text-primary text-glow-cyan text-center">
                 {secretTopic}
@@ -114,7 +154,9 @@ export function SearcherScreen({
             >
               <div className="flex items-center gap-2 mb-3">
                 <AlertTriangle className="w-4 h-4 text-destructive" />
-                <span className="font-mono text-sm text-destructive font-bold">FORBIDDEN WORDS</span>
+                <span className="font-mono text-sm text-destructive font-bold">
+                  FORBIDDEN WORDS
+                </span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {forbiddenWords.map((word) => (
@@ -151,7 +193,9 @@ export function SearcherScreen({
                   animate={{ opacity: 1 }}
                   className="text-center py-4"
                 >
-                  <p className="font-mono text-primary animate-pulse">ENCRYPTING QUERY...</p>
+                  <p className="font-mono text-primary animate-pulse">
+                    ENCRYPTING QUERY...
+                  </p>
                   <div className="mt-4 space-y-3">
                     <SearchResultSkeleton />
                     <SearchResultSkeleton />
@@ -163,33 +207,27 @@ export function SearcherScreen({
                 <>
                   {results.length > 0 ? (
                     <>
-                      <p className="font-mono text-sm text-muted-foreground">
-                        DECLASSIFIED RESULTS ({results.length})
-                      </p>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="font-mono text-sm text-muted-foreground">
+                          DECLASSIFIED RESULTS ({results.length})
+                        </p>
+                        {selectedIndex !== null && (
+                          <p className="font-mono text-xs text-primary">
+                            ✓ Result selected and sent to guessers
+                          </p>
+                        )}
+                      </div>
                       {results.map((result, i) => (
                         <SearchResultCard
                           key={i}
                           {...result}
                           isRedacted={false}
                           delay={i * 0.2}
+                          redactedTerms={result.redactedTerms}
+                          isSelected={selectedIndex === i}
+                          onClick={() => handleResultClick(i)}
                         />
                       ))}
-
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 0.8 }}
-                        className="flex justify-center pt-4"
-                      >
-                        <GlowButton
-                          onClick={onSubmit}
-                          variant="primary"
-                          size="lg"
-                          icon={<Send className="w-5 h-5" />}
-                        >
-                          Send to Guesser
-                        </GlowButton>
-                      </motion.div>
                     </>
                   ) : (
                     <motion.div
@@ -218,14 +256,21 @@ export function SearcherScreen({
             >
               <div className="flex items-center gap-2 mb-4">
                 <History className="w-4 h-4 text-muted-foreground" />
-                <span className="font-mono text-sm text-muted-foreground">SEARCH HISTORY</span>
+                <span className="font-mono text-sm text-muted-foreground">
+                  SEARCH HISTORY
+                </span>
               </div>
               {searchHistory.length === 0 ? (
-                <p className="text-sm text-muted-foreground italic">No searches yet</p>
+                <p className="text-sm text-muted-foreground italic">
+                  No searches yet
+                </p>
               ) : (
                 <ul className="space-y-2">
                   {searchHistory.map((query, i) => (
-                    <li key={i} className="font-mono text-sm text-foreground/70 truncate">
+                    <li
+                      key={i}
+                      className="font-mono text-sm text-foreground/70 truncate"
+                    >
                       &gt; {query}
                     </li>
                   ))}
