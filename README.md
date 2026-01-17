@@ -1,3 +1,12 @@
+## Backend setup
+cd classified-intel-backend
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+
+
+
 # Welcome to your Lovable project
 
 ## Project info
