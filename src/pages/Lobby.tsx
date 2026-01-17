@@ -179,6 +179,15 @@ const Lobby = () => {
       setLobby(data.lobby);
     };
 
+    const handlePlayerJoined = (data: {
+      playerId: string;
+      playerName: string;
+      message: string;
+    }) => {
+      toast.success(data.message || `${data.playerName} joined the lobby`);
+      // The lobby:state event will be sent separately to update the player list
+    };
+
     const handlePlayerLeft = (data: {
       playerId: string;
       playerName: string;
@@ -202,6 +211,7 @@ const Lobby = () => {
     };
 
     socket.on("lobby:state", handleLobbyState);
+    socket.on("lobby:player_joined", handlePlayerJoined);
     socket.on("lobby:player_left", handlePlayerLeft);
     socket.on("lobby:player_disconnected", handlePlayerDisconnected);
     socket.on("error", handleError);
@@ -209,6 +219,7 @@ const Lobby = () => {
     // Cleanup
     return () => {
       socket.off("lobby:state", handleLobbyState);
+      socket.off("lobby:player_joined", handlePlayerJoined);
       socket.off("lobby:player_left", handlePlayerLeft);
       socket.off("lobby:player_disconnected", handlePlayerDisconnected);
       socket.off("error", handleError);
@@ -407,23 +418,24 @@ const Lobby = () => {
 
             <div className="space-y-2">
               {lobby.players.map((player, index) => {
-                const isConnected = player.isConnected !== false; // Default to true if undefined
+                const isConnected = player.isConnected === true; // Explicitly check for true
                 const isInGame = lobby.status === "in_game";
+                const isWaiting = lobby.status === "waiting";
 
                 return (
                   <div
                     key={player.playerId}
                     className={`flex items-center gap-3 p-3 rounded-lg ${
-                      !isConnected && isInGame
-                        ? "bg-muted/20 opacity-60"
-                        : "bg-muted/30"
+                      !isConnected ? "bg-muted/20 opacity-60" : "bg-muted/30"
                     }`}
                   >
                     <div
                       className={`w-2 h-2 rounded-full ${
                         isConnected
                           ? "bg-green-500 animate-pulse"
-                          : "bg-red-500"
+                          : isWaiting
+                            ? "bg-yellow-500"
+                            : "bg-red-500"
                       }`}
                     />
                     <span
@@ -434,6 +446,11 @@ const Lobby = () => {
                       }`}
                     >
                       {player.playerName}
+                      {!isConnected && isWaiting && (
+                        <span className="text-xs ml-2 text-yellow-600">
+                          (CONNECTING...)
+                        </span>
+                      )}
                       {!isConnected && isInGame && (
                         <span className="text-xs ml-2 text-destructive">
                           (DISCONNECTED)
