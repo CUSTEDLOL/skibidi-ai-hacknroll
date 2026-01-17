@@ -447,8 +447,27 @@ def start_game(lobby_id):
     game_id = str(uuid.uuid4())
     lobby['gameId'] = game_id
 
-    # TODO: Send WebSocket message to both players with their assigned roles
-    # socket.emit('role_assigned', {'role': role, 'gameConfig': game_config})
+    # Emit game started event to all players in the lobby with their roles
+    socketio.emit('game:started', {
+        'gameId': game_id,
+        'gameConfig': game_config,
+        'players': lobby['players'],
+        'message': 'Game has started'
+    }, room=lobby_id)
+
+    # Also emit individual role assignments to each player
+    for player in lobby['players']:
+        player_id = player['playerId']
+        player_sid = user_socket_map.get(player_id)
+        if player_sid:
+            socketio.emit('game:role_assigned', {
+                'role': player['role'],
+                'gameConfig': game_config,
+                'gameId': game_id
+            }, room=player_sid)
+
+    # Broadcast updated lobby state
+    emit_lobby_state(lobby_id)
 
     return jsonify({
         'gameId': game_id,

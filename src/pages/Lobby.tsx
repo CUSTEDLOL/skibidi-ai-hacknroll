@@ -210,11 +210,36 @@ const Lobby = () => {
       toast.error(data.error || "An error occurred");
     };
 
+    const handleGameStarted = (data: {
+      gameId: string;
+      gameConfig: {
+        difficulty: string;
+        rounds: number;
+        timePerRound: number;
+        isRhythmEnabled: boolean;
+      };
+      players: Array<{ playerId: string; role: string }>;
+      message: string;
+    }) => {
+      console.log("Game started event received:", data);
+      // Find current player's role
+      const myPlayer = data.players.find((p) => p.playerId === playerId);
+      if (myPlayer?.role) {
+        // Navigate based on role
+        if (myPlayer.role === "searcher") {
+          navigate("/game/searcher-briefing");
+        } else if (myPlayer.role === "guesser") {
+          navigate("/game/guesser-active");
+        }
+      }
+    };
+
     socket.on("lobby:state", handleLobbyState);
     socket.on("lobby:player_joined", handlePlayerJoined);
     socket.on("lobby:player_left", handlePlayerLeft);
     socket.on("lobby:player_disconnected", handlePlayerDisconnected);
     socket.on("error", handleError);
+    socket.on("game:started", handleGameStarted);
 
     // Cleanup
     return () => {
@@ -223,6 +248,7 @@ const Lobby = () => {
       socket.off("lobby:player_left", handlePlayerLeft);
       socket.off("lobby:player_disconnected", handlePlayerDisconnected);
       socket.off("error", handleError);
+      socket.off("game:started", handleGameStarted);
 
       // Leave lobby on unmount
       if (lobbyIdRef.current && socket.connected) {
