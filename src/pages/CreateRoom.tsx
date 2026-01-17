@@ -13,6 +13,9 @@ import {
   CATEGORIES,
   type GameSettings 
 } from "@/lib/playerUtils";
+import { socket } from "@/socket";
+const API_BASE = "http://127.0.0.1:5000";
+
 
 type Difficulty = 'easy' | 'medium' | 'hard' | 'custom';
 
@@ -57,13 +60,13 @@ const CreateRoom = () => {
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+const handleCreateRoom = async () => {
+  setIsCreating(true);
 
-  const handleCreateRoom = async () => {
-    setIsCreating(true);
-    
+  try {
     const playerId = getOrCreatePlayerId();
-    const lobbyCode = generateLobbyCode();
-    
+
+    // You can keep settings locally for now if your backend doesn't store them yet
     const settings: GameSettings = {
       difficulty,
       rounds,
@@ -81,27 +84,51 @@ const CreateRoom = () => {
       spectatorMode,
     };
 
-    // Store lobby data in localStorage for now (will be replaced with backend)
-    localStorage.setItem('current_lobby', JSON.stringify({
-      code: lobbyCode,
-      hostId: playerId,
-      settings,
-      players: [{
-        id: playerId,
-        username: playerId,
-        isHost: true,
-        role: null,
-      }],
-      status: 'waiting',
-      chatMessages: [],
-      createdAt: new Date().toISOString(),
-    }));
+    // 1) Create lobby on backend (backend generates lobbyCode + lobbyId)
+    const res = await fetch(`${API_BASE}/api/create-lobby`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        isPublic,
+        playerName: playerId, // or a username input
+        userId: playerId,
+        // OPTIONAL: if you later want backend to store settings, add it here:
+        // settings,
+      }),
+    });
 
-    // Navigate to lobby
-    setTimeout(() => {
-      navigate(`/lobby/${lobbyCode}`);
-    }, 500);
-  };
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || "Failed to create lobby");
+    }
+
+    const data = await res.json();
+    const { lobbyId, lobbyCode } = data as { lobbyId: string; lobbyCode: string };
+
+    // 2) (Temporary) keep settings client-side until backend supports it
+    // This replaces your old localStorage lobby creation
+    localStorage.setItem(
+      "current_lobby_settings",
+      JSON.stringify({ lobbyId, lobbyCode, hostId: playerId, settings })
+    );
+
+    // 3) (Optional) if socket already connected at App root, you *can* join now.
+    // BUT recommended: do this in Lobby page after it loads.
+    // If you want to do it here anyway:
+    if (socket.connected) {
+      socket.emit("lobby:join", { lobbyId, userId: playerId });
+    }
+
+    // 4) Navigate using lobby code (URL join key)
+    navigate(`/lobby/${lobbyCode}`);
+  } catch (e: any) {
+    console.error(e);
+    // optionally show toast here
+  } finally {
+    setIsCreating(false);
+  }
+};
+
 
   return (
     <div className="min-h-screen scanlines">
