@@ -231,6 +231,13 @@ def on_lobby_leave(data):
         emit_lobby_state(lobby_id)
 
 
+# Debug ping/pong handlers for frontend socket testing
+@socketio.on("ping")
+def handle_ping(data):
+    print("[SocketIO] Received ping from frontend:", data)
+    emit("pong", {"msg": "pong from backend", "time": data.get("time")})
+    emit("debug", "Ping event received and pong sent.")
+
 # ============ Lobby Endpoints ============
 
 @app.route('/api/create-lobby', methods=['POST'])
@@ -520,4 +527,4 @@ def health_check():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    socketio.run(app, debug=True, port=5000)
