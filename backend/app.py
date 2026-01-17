@@ -358,13 +358,40 @@ def join_random_public_lobby():
     ]
 
     if not available_lobbies:
-        # No available lobbies, create a new one and return with instruction to join
+        # No available lobbies, create a new one
         lobby_result = create_lobby()
         lobby_data = lobby_result[0].get_json()
         lobby_code = lobby_data['lobbyCode']
+        lobby_id = lobby_data['lobbyId']
 
-        # Now join the created lobby
-        return join_lobby(lobby_code)
+        # Generate unique userId for this lobby
+        user_id = generate_user_id(lobby_id)
+
+        # Use requested player name or generated userId as default
+        player_name = requested_player_name.strip() if requested_player_name else user_id
+
+        # Add the first player (host) to the newly created lobby
+        # Mark as isConnected: True since they are about to connect via WebSocket
+        # This fixes the edge case where the host quick joins an empty lobby
+        lobby = lobbies[lobby_id]
+        lobby['players'].append({
+            'playerId': user_id,
+            'playerName': player_name,
+            'role': None,
+            'isConnected': True  # Host is immediately considered connected in quick join flow
+        })
+
+        print(
+            f"Player {player_name} ({user_id}) created and joined lobby {lobby_id} as host via quick join")
+
+        return jsonify({
+            'lobbyId': lobby_id,
+            'lobbyCode': lobby_code,
+            'userId': user_id,
+            'playerName': player_name,
+            'players': lobby['players'],
+            'message': f"{player_name} joined the lobby"
+        }), 200
 
     # Join the first available lobby
     lobby_id, lobby = available_lobbies[0]
@@ -447,8 +474,27 @@ def start_game(lobby_id):
     game_id = str(uuid.uuid4())
     lobby['gameId'] = game_id
 
-    # TODO: Send WebSocket message to both players with their assigned roles
-    # socket.emit('role_assigned', {'role': role, 'gameConfig': game_config})
+    # Emit game started event to all players in the lobby with their roles
+    socketio.emit('game:started', {
+        'gameId': game_id,
+        'gameConfig': game_config,
+        'players': lobby['players'],
+        'message': 'Game has started'
+    }, room=lobby_id)
+
+    # Also emit individual role assignments to each player
+    for player in lobby['players']:
+        player_id = player['playerId']
+        player_sid = user_socket_map.get(player_id)
+        if player_sid:
+            socketio.emit('game:role_assigned', {
+                'role': player['role'],
+                'gameConfig': game_config,
+                'gameId': game_id
+            }, room=player_sid)
+
+    # Broadcast updated lobby state
+    emit_lobby_state(lobby_id)
 
     return jsonify({
         'gameId': game_id,
