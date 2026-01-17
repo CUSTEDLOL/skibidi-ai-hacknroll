@@ -10,19 +10,22 @@ interface AudioContextType {
   playClick: () => void;
 }
 
-const AudioContext = createContext<AudioContextType | undefined>(undefined);
+const AudioContextReact = createContext<AudioContextType>({
+  isMuted: false,
+  setIsMuted: () => {},
+  toggleMute: () => {},
+  volume: 0.4,
+  setVolume: () => {},
+  playHover: () => {},
+  playClick: () => {},
+});
 
 export function useAudio() {
-  const context = useContext(AudioContext);
-  if (!context) {
-    throw new Error('useAudio must be used within an AudioProvider');
-  }
-  return context;
+  return useContext(AudioContextReact);
 }
 
 // Create atmospheric spy-themed ambient sound
 function createAmbientSound(audioContext: AudioContext, gainNode: GainNode) {
-  // Very subtle, pleasant pad sound
   const createPad = (freq: number, gain: number, detune: number = 0) => {
     const osc = audioContext.createOscillator();
     osc.type = 'sine';
@@ -32,7 +35,6 @@ function createAmbientSound(audioContext: AudioContext, gainNode: GainNode) {
     const oscGain = audioContext.createGain();
     oscGain.gain.setValueAtTime(gain, audioContext.currentTime);
     
-    // Add subtle filter for warmth
     const filter = audioContext.createBiquadFilter();
     filter.type = 'lowpass';
     filter.frequency.setValueAtTime(800, audioContext.currentTime);
@@ -46,24 +48,21 @@ function createAmbientSound(audioContext: AudioContext, gainNode: GainNode) {
   };
 
   const pads = [
-    createPad(65.41, 0.04, 0),      // C2 - very low base
-    createPad(130.81, 0.025, 3),    // C3 - octave up, slight detune
-    createPad(196.00, 0.015, -2),   // G3 - fifth
+    createPad(65.41, 0.04, 0),
+    createPad(130.81, 0.025, 3),
+    createPad(196.00, 0.015, -2),
   ];
 
-  // Slow LFO for gentle movement
   const lfo = audioContext.createOscillator();
   lfo.type = 'sine';
-  lfo.frequency.setValueAtTime(0.05, audioContext.currentTime); // Very slow
+  lfo.frequency.setValueAtTime(0.05, audioContext.currentTime);
   
   const lfoGain = audioContext.createGain();
   lfoGain.gain.setValueAtTime(3, audioContext.currentTime);
   
   lfo.connect(lfoGain);
-  // Modulate the first pad's frequency slightly
   lfoGain.connect(pads[0].osc.frequency);
 
-  // Very subtle filtered noise for atmosphere
   const bufferSize = audioContext.sampleRate * 2;
   const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
   const output = noiseBuffer.getChannelData(0);
@@ -75,7 +74,6 @@ function createAmbientSound(audioContext: AudioContext, gainNode: GainNode) {
   noise.buffer = noiseBuffer;
   noise.loop = true;
   
-  // Heavy filtering for subtle texture
   const noiseFilter = audioContext.createBiquadFilter();
   noiseFilter.type = 'bandpass';
   noiseFilter.frequency.setValueAtTime(150, audioContext.currentTime);
@@ -88,7 +86,6 @@ function createAmbientSound(audioContext: AudioContext, gainNode: GainNode) {
   noiseFilter.connect(noiseGain);
   noiseGain.connect(gainNode);
 
-  // Start everything
   pads.forEach(p => p.osc.start());
   lfo.start();
   noise.start();
@@ -102,8 +99,8 @@ function createAmbientSound(audioContext: AudioContext, gainNode: GainNode) {
   };
 }
 
-// Create hover sound - subtle high blip
-function playHoverSound(audioContext: AudioContext, gainNode: GainNode, volume: number) {
+// Hover sound - subtle high blip
+function playHoverSound(audioContext: AudioContext, volume: number) {
   const osc = audioContext.createOscillator();
   osc.type = 'sine';
   osc.frequency.setValueAtTime(1200, audioContext.currentTime);
@@ -126,9 +123,8 @@ function playHoverSound(audioContext: AudioContext, gainNode: GainNode, volume: 
   osc.stop(audioContext.currentTime + 0.1);
 }
 
-// Create click sound - satisfying mechanical click
-function playClickSound(audioContext: AudioContext, gainNode: GainNode, volume: number) {
-  // Click body
+// Click sound - satisfying mechanical click
+function playClickSound(audioContext: AudioContext, volume: number) {
   const osc = audioContext.createOscillator();
   osc.type = 'square';
   osc.frequency.setValueAtTime(150, audioContext.currentTime);
@@ -138,8 +134,7 @@ function playClickSound(audioContext: AudioContext, gainNode: GainNode, volume: 
   oscGain.gain.setValueAtTime(0.15 * volume, audioContext.currentTime);
   oscGain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.06);
   
-  // Add some noise for texture
-  const bufferSize = audioContext.sampleRate * 0.05;
+  const bufferSize = Math.floor(audioContext.sampleRate * 0.05);
   const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
   const output = noiseBuffer.getChannelData(0);
   for (let i = 0; i < bufferSize; i++) {
@@ -172,18 +167,28 @@ function playClickSound(audioContext: AudioContext, gainNode: GainNode, volume: 
 
 export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [isMuted, setIsMuted] = useState(() => {
-    const saved = localStorage.getItem('audio_muted');
-    return saved ? JSON.parse(saved) : false;
+    try {
+      const saved = localStorage.getItem('audio_muted');
+      return saved ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
   });
-  const [volume, setVolume] = useState(0.4);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [volume] = useState(0.4);
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const ambientRef = useRef<{ stop: () => void } | null>(null);
+  const isInitializedRef = useRef(false);
 
-  const initAudio = useCallback(() => {
-    if (isInitialized || audioContextRef.current) return;
+  const getOrCreateAudioContext = useCallback(() => {
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      // Resume if suspended
+      if (audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume();
+      }
+      return audioContextRef.current;
+    }
     
     try {
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -194,31 +199,20 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       masterGain.connect(ctx.destination);
       gainNodeRef.current = masterGain;
       
-      ambientRef.current = createAmbientSound(ctx, masterGain);
-      setIsInitialized(true);
+      // Start ambient on first creation
+      if (!isInitializedRef.current) {
+        ambientRef.current = createAmbientSound(ctx, masterGain);
+        isInitializedRef.current = true;
+      }
+      
+      return ctx;
     } catch (error) {
-      console.error('Failed to initialize audio:', error);
+      console.error('Failed to create audio context:', error);
+      return null;
     }
-  }, [isInitialized, isMuted, volume]);
+  }, [isMuted, volume]);
 
-  // Initialize on first user interaction
-  useEffect(() => {
-    const handleInteraction = () => {
-      initAudio();
-      document.removeEventListener('click', handleInteraction);
-      document.removeEventListener('keydown', handleInteraction);
-    };
-
-    document.addEventListener('click', handleInteraction);
-    document.addEventListener('keydown', handleInteraction);
-
-    return () => {
-      document.removeEventListener('click', handleInteraction);
-      document.removeEventListener('keydown', handleInteraction);
-    };
-  }, [initAudio]);
-
-  // Update gain when muted/volume changes
+  // Update gain when muted changes
   useEffect(() => {
     if (gainNodeRef.current && audioContextRef.current) {
       const targetGain = isMuted ? 0 : volume * 0.5;
@@ -227,14 +221,18 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         audioContextRef.current.currentTime + 0.1
       );
     }
-    localStorage.setItem('audio_muted', JSON.stringify(isMuted));
+    try {
+      localStorage.setItem('audio_muted', JSON.stringify(isMuted));
+    } catch {}
   }, [isMuted, volume]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       ambientRef.current?.stop();
-      audioContextRef.current?.close();
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close();
+      }
     };
   }, []);
 
@@ -242,19 +240,35 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setIsMuted((prev: boolean) => !prev);
   }, []);
 
+  const setVolume = useCallback(() => {}, []);
+
   const playHover = useCallback(() => {
-    if (isMuted || !audioContextRef.current) return;
-    playHoverSound(audioContextRef.current, gainNodeRef.current!, volume);
-  }, [isMuted, volume]);
+    if (isMuted) return;
+    const ctx = getOrCreateAudioContext();
+    if (ctx) {
+      try {
+        playHoverSound(ctx, volume);
+      } catch (e) {
+        console.error('Hover sound error:', e);
+      }
+    }
+  }, [isMuted, volume, getOrCreateAudioContext]);
 
   const playClick = useCallback(() => {
-    if (isMuted || !audioContextRef.current) return;
-    playClickSound(audioContextRef.current, gainNodeRef.current!, volume);
-  }, [isMuted, volume]);
+    if (isMuted) return;
+    const ctx = getOrCreateAudioContext();
+    if (ctx) {
+      try {
+        playClickSound(ctx, volume);
+      } catch (e) {
+        console.error('Click sound error:', e);
+      }
+    }
+  }, [isMuted, volume, getOrCreateAudioContext]);
 
   return (
-    <AudioContext.Provider value={{ isMuted, setIsMuted, toggleMute, volume, setVolume, playHover, playClick }}>
+    <AudioContextReact.Provider value={{ isMuted, setIsMuted, toggleMute, volume, setVolume, playHover, playClick }}>
       {children}
-    </AudioContext.Provider>
+    </AudioContextReact.Provider>
   );
 }
