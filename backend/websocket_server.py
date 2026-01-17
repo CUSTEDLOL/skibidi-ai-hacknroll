@@ -13,8 +13,15 @@ from typing import Dict, List, Optional, Set
 from dataclasses import dataclass, field
 from enum import Enum
 
-# Import search functions from app.py
-from app import google_search, redact_with_gemini
+# Import functions from app.py to avoid duplication
+from app import (
+    google_search,
+    redact_with_gemini,
+    get_random_topic_data,
+    validate_query_logic,
+    GOOGLE_API_KEY,
+    GEMINI_API_KEY
+)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -79,51 +86,6 @@ def broadcast_to_room(room_key: str, event: str, data: dict, exclude_sid: Option
     socketio.emit(event, data, room=room_key, skip_sid=exclude_sid)
 
 
-def get_random_topic_data() -> dict:
-    """Generate a random topic with forbidden words"""
-    topics = [
-        {
-            'topic': 'The Moon Landing',
-            'forbidden_words': ['moon', 'landing', 'apollo', 'armstrong', 'nasa', 'space']
-        },
-        {
-            'topic': 'Harry Potter',
-            'forbidden_words': ['harry', 'potter', 'hogwarts', 'wizard', 'magic', 'rowling']
-        },
-        {
-            'topic': 'The Titanic',
-            'forbidden_words': ['titanic', 'ship', 'iceberg', 'sink', 'dicaprio', 'atlantic']
-        },
-        {
-            'topic': 'Bitcoin',
-            'forbidden_words': ['bitcoin', 'cryptocurrency', 'blockchain', 'satoshi', 'crypto', 'mining']
-        },
-        {
-            'topic': 'The Eiffel Tower',
-            'forbidden_words': ['eiffel', 'tower', 'paris', 'france', 'gustave', 'iron']
-        },
-        {
-            'topic': 'Albert Einstein',
-            'forbidden_words': ['einstein', 'relativity', 'physics', 'scientist', 'genius', 'nobel']
-        },
-        {
-            'topic': 'The Great Wall of China',
-            'forbidden_words': ['wall', 'china', 'great', 'dynasty', 'beijing', 'ancient']
-        },
-        {
-            'topic': 'The iPhone',
-            'forbidden_words': ['iphone', 'apple', 'smartphone', 'jobs', 'ios', 'mobile']
-        },
-        {
-            'topic': 'World War II',
-            'forbidden_words': ['war', 'world', 'hitler', 'nazi', 'allies', 'holocaust']
-        },
-        {
-            'topic': 'The Olympics',
-            'forbidden_words': ['olympics', 'games', 'medal', 'athlete', 'sports', 'torch']
-        }
-    ]
-    return random.choice(topics)
 
 
 def get_room_state_for_client(room: GameState, player_sid: str) -> dict:
@@ -394,17 +356,16 @@ def handle_searcher_make_search(data: dict):
         emit('error', {'message': 'Search query is required'})
         return
     
-    # Validate query doesn't contain forbidden words
-    query_lower = search_query.lower()
-    violations = [word for word in room.forbidden_words if word.lower() in query_lower]
+    # Validate query doesn't contain forbidden words using shared logic
+    validation_result = validate_query_logic(search_query, room.forbidden_words)
     
-    if violations:
+    if not validation_result['valid']:
         emit('search_result', {
             'query': search_query,
             'results': [],
             'valid': False,
-            'violations': violations,
-            'message': f'Query contains forbidden words: {", ".join(violations)}'
+            'violations': validation_result['violations'],
+            'message': validation_result['message']
         })
         return
     
@@ -634,4 +595,6 @@ def handle_get_room_state(data: dict):
 
 if __name__ == '__main__':
     print("Starting WebSocket server...")
+    print(f"Google API Key configured: {bool(GOOGLE_API_KEY)}")
+    print(f"Gemini API Key configured: {bool(GEMINI_API_KEY)}")
     socketio.run(app, debug=True, port=5001, allow_unsafe_werkzeug=True)
