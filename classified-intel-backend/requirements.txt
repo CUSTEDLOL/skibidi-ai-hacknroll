@@ -1,6 +1,0 @@
-FastAPI
-uvicorn
-pydantic
-sqlalchemy
-python-dotenv
-httpx
