@@ -4,8 +4,6 @@ const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:5000";
 
 export interface CreateLobbyRequest {
   isPublic: boolean;
-  playerName: string;
-  userId: string;
 }
 
 export interface CreateLobbyResponse {
@@ -16,16 +14,18 @@ export interface CreateLobbyResponse {
 }
 
 export interface JoinLobbyRequest {
-  playerName: string;
-  userId: string;
+  playerName?: string;
 }
 
 export interface JoinLobbyResponse {
   lobbyId: string;
+  userId: string;
+  playerName: string;
   players: Array<{
     playerId: string;
     playerName: string;
     role: string | null;
+    isConnected?: boolean;
   }>;
   message: string;
 }
@@ -39,8 +39,9 @@ export interface LobbyInfo {
     playerId: string;
     playerName: string;
     role: string | null;
+    isConnected?: boolean;
   }>;
-  status: 'waiting' | 'in_game' | 'finished';
+  status: "waiting" | "in_game" | "finished";
   gameConfig: {
     difficulty: string;
     rounds: number;
@@ -126,7 +127,9 @@ export interface StartGameResponse {
 
 // API Functions
 
-export async function createLobby(data: CreateLobbyRequest): Promise<CreateLobbyResponse> {
+export async function createLobby(
+  data: CreateLobbyRequest,
+): Promise<CreateLobbyResponse> {
   const response = await fetch(`${API_BASE}/api/create-lobby`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -141,7 +144,10 @@ export async function createLobby(data: CreateLobbyRequest): Promise<CreateLobby
   return response.json();
 }
 
-export async function joinLobby(lobbyCode: string, data: JoinLobbyRequest): Promise<JoinLobbyResponse> {
+export async function joinLobby(
+  lobbyCode: string,
+  data: JoinLobbyRequest,
+): Promise<JoinLobbyResponse> {
   const response = await fetch(`${API_BASE}/api/join-lobby/${lobbyCode}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -156,7 +162,9 @@ export async function joinLobby(lobbyCode: string, data: JoinLobbyRequest): Prom
   return response.json();
 }
 
-export async function joinRandomPublicLobby(data: JoinLobbyRequest): Promise<JoinLobbyResponse & { lobbyCode: string }> {
+export async function joinRandomPublicLobby(
+  data: JoinLobbyRequest,
+): Promise<JoinLobbyResponse & { lobbyCode: string }> {
   const response = await fetch(`${API_BASE}/api/join-random-public-lobby`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -185,7 +193,26 @@ export async function getLobby(lobbyId: string): Promise<{ lobby: LobbyInfo }> {
   return response.json();
 }
 
-export async function startGame(lobbyId: string, data: StartGameRequest = {}): Promise<StartGameResponse> {
+export async function getLobbyByCode(
+  lobbyCode: string,
+): Promise<{ lobby: LobbyInfo }> {
+  const response = await fetch(`${API_BASE}/api/lobby-by-code/${lobbyCode}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error?.error || "Failed to get lobby");
+  }
+
+  return response.json();
+}
+
+export async function startGame(
+  lobbyId: string,
+  data: StartGameRequest = {},
+): Promise<StartGameResponse> {
   const response = await fetch(`${API_BASE}/api/start-game/${lobbyId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -215,7 +242,9 @@ export async function search(data: SearchRequest): Promise<SearchResponse> {
   return response.json();
 }
 
-export async function searchRedacted(data: RedactedSearchRequest): Promise<RedactedSearchResponse> {
+export async function searchRedacted(
+  data: RedactedSearchRequest,
+): Promise<RedactedSearchResponse> {
   const response = await fetch(`${API_BASE}/api/search/redacted`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -230,7 +259,9 @@ export async function searchRedacted(data: RedactedSearchRequest): Promise<Redac
   return response.json();
 }
 
-export async function validateQuery(data: ValidateQueryRequest): Promise<ValidateQueryResponse> {
+export async function validateQuery(
+  data: ValidateQueryRequest,
+): Promise<ValidateQueryResponse> {
   const response = await fetch(`${API_BASE}/api/validate-query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

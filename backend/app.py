@@ -40,6 +40,23 @@ def generate_lobby_code(length=6):
     chars = string.ascii_letters + string.digits
     return ''.join(random.choices(chars, k=length))
 
+# Helper to generate a unique user ID for a room
+
+
+def generate_user_id(lobby_id):
+    """Generate a unique user ID that's unique within the lobby"""
+    chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    while True:
+        user_id = 'AGENT_' + ''.join(random.choices(chars, k=4))
+        # Check if user_id is unique in this lobby
+        lobby = lobbies.get(lobby_id)
+        if lobby:
+            existing_ids = {p['playerId'] for p in lobby['players']}
+            if user_id not in existing_ids:
+                return user_id
+        else:
+            return user_id
+
 # Helper for socket connections
 
 
@@ -61,9 +78,61 @@ def on_connect():
 def on_disconnect():
     sid = request.sid
     user_id = socket_user_map.get(sid)
+
+    # Clean up socket mappings
     if user_id:
         user_socket_map.pop(user_id, None)
         socket_user_map.pop(sid, None)
+
+        # Handle player disconnect based on lobby state
+        for lobby_id, lobby in list(lobbies.items()):
+            player_found = False
+            for i, player in enumerate(lobby['players']):
+                if player['playerId'] == user_id:
+                    player_name = player['playerName']
+                    player_found = True
+
+                    # Differentiate between lobby (waiting) and in-game disconnect
+                    if lobby['status'] == 'waiting':
+                        # In lobby: remove player entirely
+                        lobby['players'].pop(i)
+                        print(
+                            f"Player {player_name} ({user_id}) left lobby {lobby_id}")
+
+                        # Check if any players remain
+                        if len(lobby['players']) > 0:
+                            emit_lobby_state(lobby_id)
+                            socketio.emit("lobby:player_left", {
+                                "playerId": user_id,
+                                "playerName": player_name,
+                                "message": f"{player_name} has left the lobby"
+                            }, room=lobby_id)
+                        else:
+                            # No players left, clean up the lobby
+                            lobby_code = lobby['lobbyCode']
+                            del lobbies[lobby_id]
+                            lobby_code_map.pop(lobby_code, None)
+                            print(
+                                f"Lobby {lobby_id} cleaned up (no players remaining)")
+
+                    elif lobby['status'] == 'in_game':
+                        # During game: mark as disconnected but keep in player list
+                        player['isConnected'] = False
+                        print(
+                            f"Player {player_name} ({user_id}) disconnected during game in lobby {lobby_id}")
+
+                        emit_lobby_state(lobby_id)
+                        socketio.emit("lobby:player_disconnected", {
+                            "playerId": user_id,
+                            "playerName": player_name,
+                            "message": f"{player_name} has disconnected"
+                        }, room=lobby_id)
+
+                    break
+
+            if player_found:
+                break
+
     print("Socket disconnected:", sid)
 
 
@@ -119,16 +188,12 @@ def handle_ping(data):
 @app.route('/api/create-lobby', methods=['POST'])
 def create_lobby():
     """
-    Create a new lobby (private or public)
-    Request: { "isPublic": bool, "playerName": str, "userId": str }
+    Create a new lobby (private or public) - host will join separately
+    Request: { "isPublic": bool }
     Response: { "lobbyId": str, "lobbyCode": str, "createdAt": str, "isPublic": bool }
     """
     data = request.json
     is_public = data.get('isPublic', True)
-    player_name = data.get('playerName', 'Player')
-    user_id = data.get('userId')
-    if not user_id:
-        return jsonify({'error': 'Missing userId'}), 400
 
     lobby_id = str(uuid.uuid4())
     lobby_code = generate_lobby_code()
@@ -140,16 +205,13 @@ def create_lobby():
         'lobbyCode': lobby_code,
         'isPublic': is_public,
         'createdAt': datetime.now().isoformat(),
-        'players': [{'playerId': user_id, 'playerName': player_name, 'role': None}],
+        'players': [],  # Empty initially - host will join via join-lobby
         'status': 'waiting',  # waiting, in_game, finished
         'gameConfig': None,
         'gameId': None
     }
     lobbies[lobby_id] = lobby
     lobby_code_map[lobby_code] = lobby_id
-
-    # Broadcast state in case host already connected & joined room
-    emit_lobby_state(lobby_id)
 
     return jsonify({
         'lobbyId': lobby_id,
@@ -162,15 +224,12 @@ def create_lobby():
 @app.route('/api/join-lobby/<lobby_code>', methods=['POST'])
 def join_lobby(lobby_code):
     """
-    Join a lobby via 6-char code
-    Request: { "playerName": str, "userId": str }
-    Response: { "lobbyId": str, "players": [...], "message": str }
+    Join a lobby via 6-char code - generates userId and playerName on backend
+    Request: { "playerName": str (optional) }
+    Response: { "lobbyId": str, "userId": str, "playerName": str, "players": [...], "message": str }
     """
-    data = request.json
-    player_name = data.get('playerName', 'Player')
-    user_id = data.get('userId')
-    if not user_id:
-        return jsonify({'error': 'Missing userId'}), 400
+    data = request.json or {}
+    requested_player_name = data.get('playerName', '')
 
     lobby_id = lobby_code_map.get(lobby_code)
     if not lobby_id or lobby_id not in lobbies:
@@ -180,28 +239,24 @@ def join_lobby(lobby_code):
     if lobby['status'] != 'waiting':
         return jsonify({'error': 'Game has already started'}), 400
 
-    # Idempotent join: if already in lobby, just return lobby info
-    if any(p['playerId'] == user_id for p in lobby['players']):
-        return jsonify({
-            'lobbyId': lobby_id,
-            'players': lobby['players'],
-            'message': "User already in lobby"
-        }), 200
+    # Generate unique userId for this lobby
+    user_id = generate_user_id(lobby_id)
 
-    # Check if lobby is full (max 2 players for this game) config
-    # if len(lobby['players']) >= 2:
-    #     return jsonify({'error': 'Lobby is full'}), 400
-    # Check if game already started
+    # Use requested player name or generated userId as default
+    player_name = requested_player_name.strip() if requested_player_name else user_id
 
     lobby['players'].append({
         'playerId': user_id,
         'playerName': player_name,
-        'role': None
+        'role': None,
+        'isConnected': True
     })
     emit_lobby_state(lobby_id)
 
     return jsonify({
         'lobbyId': lobby_id,
+        'userId': user_id,
+        'playerName': player_name,
         'players': lobby['players'],
         'message': f"{player_name} joined the lobby"
     }), 200
@@ -210,39 +265,51 @@ def join_lobby(lobby_code):
 @app.route('/api/join-random-public-lobby', methods=['POST'])
 def join_random_public_lobby():
     """
-    Quick join a random public lobby
-    Request: { "playerName": str, "userId": str }
-    Response: { "lobbyId": str, "players": [...], "lobbyCode": str }
+    Quick join a random public lobby - generates userId and playerName on backend
+    Request: { "playerName": str (optional) }
+    Response: { "lobbyId": str, "userId": str, "playerName": str, "players": [...], "lobbyCode": str }
     """
-    data = request.json
-    player_name = data.get('playerName', 'Player')
-    user_id = data.get('userId')
-    if not user_id:
-        return jsonify({'error': 'Missing userId'}), 400
+    data = request.json or {}
+    requested_player_name = data.get('playerName', '')
 
-    # Find available public lobbies with only 1 player
+    # Find available public lobbies with at least 1 player but not full
     available_lobbies = [
         (lobby_id, lobby) for lobby_id, lobby in lobbies.items()
-        if lobby['isPublic'] and lobby['status'] == 'waiting' and len(lobby['players']) == 1
+        if lobby['isPublic'] and lobby['status'] == 'waiting' and len(lobby['players']) >= 1
     ]
 
     if not available_lobbies:
-        # No available lobbies, create a new one
-        return create_lobby()
+        # No available lobbies, create a new one and return with instruction to join
+        lobby_result = create_lobby()
+        lobby_data = lobby_result[0].get_json()
+        lobby_code = lobby_data['lobbyCode']
+
+        # Now join the created lobby
+        return join_lobby(lobby_code)
 
     # Join the first available lobby
     lobby_id, lobby = available_lobbies[0]
-    if any(p['playerId'] == user_id for p in lobby['players']):
-        return jsonify({'error': 'User already in lobby'}), 400
+    lobby_code = lobby['lobbyCode']
+
+    # Generate unique userId for this lobby
+    user_id = generate_user_id(lobby_id)
+
+    # Use requested player name or generated userId as default
+    player_name = requested_player_name.strip() if requested_player_name else user_id
+
     lobby['players'].append({
         'playerId': user_id,
         'playerName': player_name,
-        'role': None
+        'role': None,
+        'isConnected': True
     })
+    emit_lobby_state(lobby_id)
 
     return jsonify({
         'lobbyId': lobby_id,
-        'lobbyCode': lobby['lobbyCode'],
+        'lobbyCode': lobby_code,
+        'userId': user_id,
+        'playerName': player_name,
         'players': lobby['players'],
         'message': f"{player_name} joined the lobby"
     }), 200
@@ -311,10 +378,23 @@ def start_game(lobby_id):
 @app.route('/api/lobby/<lobby_id>', methods=['GET'])
 def get_lobby(lobby_id):
     """
-    Get lobby details
+    Get lobby details by ID
     Response: { "lobby": {...} }
     """
     if lobby_id not in lobbies:
+        return jsonify({'error': 'Lobby not found'}), 404
+
+    return jsonify({'lobby': lobbies[lobby_id]}), 200
+
+
+@app.route('/api/lobby-by-code/<lobby_code>', methods=['GET'])
+def get_lobby_by_code(lobby_code):
+    """
+    Get lobby details by code
+    Response: { "lobby": {...} }
+    """
+    lobby_id = lobby_code_map.get(lobby_code)
+    if not lobby_id or lobby_id not in lobbies:
         return jsonify({'error': 'Lobby not found'}), 404
 
     return jsonify({'lobby': lobbies[lobby_id]}), 200
