@@ -47,6 +47,7 @@ const Lobby = () => {
   const [isLoading, setIsLoading] = useState(true);
   const playerId = localStorage.getItem("player_id") || "";
   const lobbyIdRef = useRef<string | null>(null);
+  const isGameStartingRef = useRef(false);
 
   // Load lobby data and join via WebSocket
   useEffect(() => {
@@ -245,6 +246,9 @@ const Lobby = () => {
         lobbyIdRef.current || (settings ? JSON.parse(settings).lobbyId : null);
 
       if (myPlayer?.role) {
+        // Mark as game starting to prevent lobby:leave
+        isGameStartingRef.current = true;
+
         // Navigate based on role
         if (myPlayer.role === "searcher") {
           navigate("/game/searcher-briefing", {
@@ -280,8 +284,12 @@ const Lobby = () => {
       socket.off("error", handleError);
       socket.off("game:started", handleGameStarted);
 
-      // Leave lobby on unmount
-      if (lobbyIdRef.current && socket.connected) {
+      // Leave lobby on unmount ONLY if game is NOT starting
+      if (
+        lobbyIdRef.current &&
+        socket.connected &&
+        !isGameStartingRef.current
+      ) {
         socket.emit("lobby:leave", { lobbyId: lobbyIdRef.current });
       }
     };
@@ -352,6 +360,9 @@ const Lobby = () => {
       }
 
       const result = await startGame(lobbyIdRef.current, gameConfig);
+
+      // Mark as game starting to prevent lobby:leave
+      isGameStartingRef.current = true;
 
       // Navigate to role assignment or game screen
       // The backend assigns roles, so we can navigate based on the player's role

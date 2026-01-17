@@ -27,12 +27,30 @@ export function Timer({
   const strokeDashoffset = circumference - (percentage / 100) * circumference;
 
   useEffect(() => {
+    // Start local countdown
+    const interval = setInterval(() => {
+      setSeconds((prev) => {
+        if (prev <= 0) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
     // Listen for timer sync from backend
     const handleTimerSync = (data: {
       timeRemaining: number;
       roundNumber: number;
     }) => {
-      setSeconds(data.timeRemaining);
+      // Only sync if significant drift (> 2 seconds)
+      setSeconds((currentSeconds) => {
+        const drift = Math.abs(currentSeconds - data.timeRemaining);
+        if (drift > 2) {
+          return data.timeRemaining;
+        }
+        return currentSeconds;
+      });
 
       if (data.timeRemaining <= 0) {
         onComplete?.();
@@ -74,6 +92,7 @@ export function Timer({
       });
 
     return () => {
+      clearInterval(interval);
       socket.off("round:timer_sync", handleTimerSync);
       socket.off("round:started", handleRoundStarted);
       socket.off("round:ended", handleRoundEnded);

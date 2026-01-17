@@ -26,6 +26,7 @@ import {
   getOrCreatePlayerName,
   type Player,
 } from "@/lib/playerUtils";
+import { socket } from "@/socket";
 
 interface ExtractedClue {
   type: "date" | "person" | "location" | "quote";
@@ -102,35 +103,44 @@ const GuesserActive = () => {
 
   const attemptsRemaining = maxAttempts - guessHistory.length;
 
-  // Load redacted results from location state or WebSocket
+  // Listen for round start and redacted results
   useEffect(() => {
-    const resultsFromState = (location.state as any)?.redactedResults;
-    if (resultsFromState && Array.isArray(resultsFromState)) {
-      setRedactedResults(resultsFromState);
-    } else {
-      // Default demo data if nothing provided
-      setRedactedResults([
-        {
-          source: "wikipedia.org",
-          title: "The █████ █████ was a historic event",
-          snippet:
-            "In July 1969, the world witnessed a historic moment when █████ became the first person to walk on the █████...",
-        },
-        {
-          source: "history.com",
-          title: "█████ Program Achievement",
-          snippet:
-            "The ambitious program achieved its goal when █████ said 'That's one small step for man, one giant leap for mankind'...",
-        },
-        {
-          source: "space.com",
-          title: "One Small Step for Mankind",
-          snippet:
-            "The Eagle has landed at Tranquility Base, marking humanity's greatest achievement in exploration...",
-        },
-      ]);
-    }
-  }, [location.state]);
+    // Check initial state - maybe round already started?
+    fetch(`http://127.0.0.1:5000/api/round/state/${lobbyId}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.roundState && data.roundState.isActive) {
+          setIsWaitingForSearcher(false);
+        }
+      })
+      .catch(() => {
+        // Ignore errors, wait for socket event
+      });
+
+    const handleRoundStarted = () => {
+      setIsWaitingForSearcher(false);
+      toast.success("Mission Briefing Received! Round Starting...");
+    };
+
+    const handleRedactedResults = (data: { results: any[] }) => {
+      setRedactedResults(
+        data.results.map((r) => ({
+          source: new URL(r.link).hostname,
+          title: r.title,
+          snippet: r.snippet,
+          link: r.link,
+        })),
+      );
+    };
+
+    socket.on("round:started", handleRoundStarted);
+    socket.on("round:redacted_results", handleRedactedResults);
+
+    return () => {
+      socket.off("round:started", handleRoundStarted);
+      socket.off("round:redacted_results", handleRedactedResults);
+    };
+  }, [lobbyId]);
 
   // Redirect if no lobbyId found
   useEffect(() => {
@@ -248,6 +258,47 @@ const GuesserActive = () => {
       },
     });
   };
+
+  if (isWaitingForSearcher) {
+    return (
+      <div className="min-h-screen scanlines">
+        <Background />
+        <Header />
+        <div className="min-h-screen flex flex-col items-center justify-center">
+          <div className="text-center space-y-6 p-8 bg-card border border-border rounded-lg max-w-md mx-4">
+            <div className="flex justify-center">
+              <div className="relative">
+                <div className="absolute inset-0 bg-primary/20 blur-xl animate-pulse" />
+                <ClassifiedStamp type="top-secret" animate={true} />
+              </div>
+            </div>
+            <h2 className="text-2xl font-mono font-bold text-primary animate-pulse">
+              AWAITING MISSION BRIEFING
+            </h2>
+            <p className="font-mono text-muted-foreground">
+              The Searcher is currently selecting an intelligence target.
+              <br />
+              Stand by for encrypted transmission...
+            </p>
+            <div className="flex justify-center gap-1">
+              {[0, 1, 2].map((i) => (
+                <motion.div
+                  key={i}
+                  className="w-2 h-2 bg-primary rounded-full"
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{
+                    duration: 1.5,
+                    repeat: Infinity,
+                    delay: i * 0.2,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen scanlines">
