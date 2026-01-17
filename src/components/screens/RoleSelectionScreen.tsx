@@ -7,11 +7,11 @@ import { ClassifiedStamp } from "../ui/ClassifiedStamp";
 
 interface RoleSelectionScreenProps {
   onBack?: () => void;
-  onContinue?: (role: "searcher" | "guesser") => void;
+  onContinue?: (role: "searcher" | "guesser" | "random") => void;
 }
 
 export function RoleSelectionScreen({ onBack, onContinue }: RoleSelectionScreenProps) {
-  const [selectedRole, setSelectedRole] = useState<"searcher" | "guesser" | null>(null);
+  const [selectedRole, setSelectedRole] = useState<"searcher" | "guesser" | "random" | null>(null);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 py-20">
@@ -46,6 +46,11 @@ export function RoleSelectionScreen({ onBack, onContinue }: RoleSelectionScreenP
           role="guesser"
           selected={selectedRole === "guesser"}
           onClick={() => setSelectedRole("guesser")}
+        />
+        <RoleCard
+          role="random"
+          selected={selectedRole === "random"}
+          onClick={() => setSelectedRole("random")}
         />
       </motion.div>
 
@@ -89,6 +94,12 @@ export function RoleSelectionScreen({ onBack, onContinue }: RoleSelectionScreenP
           <p className="text-muted-foreground font-mono text-sm">
             As the <span className="text-accent">GUESSER</span>, you'll analyze redacted search results 
             and piece together clues to discover the secret topic.
+          </p>
+        )}
+        {selectedRole === "random" && (
+          <p className="text-muted-foreground font-mono text-sm">
+            Let <span className="text-purple-400">FATE</span> decide! You'll be randomly assigned as 
+            either a Searcher or Guesser when the game begins.
           </p>
         )}
       </motion.div>
