@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate, useParams } from "react-router-dom";
 import { 
@@ -13,108 +13,72 @@ import {
   Globe, 
   Lock,
   MessageSquare,
-  AlertCircle,
-  Loader2,
-  Wifi,
-  WifiOff
+  AlertCircle
 } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { Background } from "@/components/layout/Background";
 import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
 import { GlowButton } from "@/components/ui/GlowButton";
-import { api, ApiError, type LobbyData } from "@/lib/api";
-import { useSocket } from "@/hooks/useSocket";
-import { getOrCreateUserId, getOrCreatePlayerName, clearCurrentLobby, getCurrentLobby } from "@/lib/userUtils";
+import { getOrCreatePlayerId, type Lobby as LobbyType, type Player, type ChatMessage } from "@/lib/playerUtils";
 import { toast } from "sonner";
-
-interface ChatMessage {
-  id: string;
-  playerId: string;
-  playerName: string;
-  message: string;
-  timestamp: string;
-}
 
 const Lobby = () => {
   const navigate = useNavigate();
   const { code } = useParams<{ code: string }>();
-  const [lobby, setLobby] = useState<LobbyData | null>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [lobby, setLobby] = useState<LobbyType | null>(null);
   const [chatInput, setChatInput] = useState("");
   const [isStarting, setIsStarting] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  
-  const userId = getOrCreateUserId();
-  const playerName = getOrCreatePlayerName();
+  const playerId = getOrCreatePlayerId();
 
-  // Load initial lobby data
   useEffect(() => {
-    const loadLobby = async () => {
-      const currentLobby = getCurrentLobby();
-      if (!currentLobby) {
-        toast.error("No lobby found. Please join a lobby first.");
-        navigate("/");
-        return;
-      }
-
-      try {
-        const response = await api.getLobby(currentLobby.lobbyId);
-        setLobby(response.lobby);
-      } catch (error) {
-        if (error instanceof ApiError) {
-          toast.error(error.message);
-        } else {
-          toast.error("Failed to load lobby.");
-        }
-        navigate("/");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadLobby();
-  }, [navigate]);
-
-  // Socket connection for real-time updates
-  const handleLobbyUpdate = useCallback((updatedLobby: LobbyData) => {
-    setLobby(updatedLobby);
-    
-    // Check if game started
-    if (updatedLobby.status === 'in_game' && updatedLobby.gameId) {
-      // Find current player's role
-      const currentPlayer = updatedLobby.players.find(p => p.playerId === userId);
-      if (currentPlayer?.role === 'searcher') {
-        navigate('/game/searcher-briefing');
+    // Load lobby from localStorage (will be replaced with WebSocket)
+    const storedLobby = localStorage.getItem('current_lobby');
+    if (storedLobby) {
+      const parsed = JSON.parse(storedLobby) as LobbyType;
+      if (parsed.code === code) {
+        setLobby(parsed);
       } else {
-        navigate('/game/guesser-active');
+        // Try to join as new player
+        const newPlayer: Player = {
+          id: playerId,
+          username: playerId,
+          isHost: false,
+          role: null,
+        };
+        parsed.players.push(newPlayer);
+        localStorage.setItem('current_lobby', JSON.stringify(parsed));
+        setLobby(parsed);
       }
+    } else {
+      // Create placeholder lobby for joining with code
+      const newLobby: LobbyType = {
+        code: code || '',
+        hostId: playerId,
+        settings: {
+          difficulty: 'medium',
+          rounds: 5,
+          timePerRound: 90,
+          maxPlayers: 4,
+          isPublic: false,
+          category: 'general',
+          rhythmMode: false,
+        },
+        players: [{
+          id: playerId,
+          username: playerId,
+          isHost: true,
+          role: null,
+        }],
+        status: 'waiting',
+        chatMessages: [],
+        createdAt: new Date().toISOString(),
+      };
+      localStorage.setItem('current_lobby', JSON.stringify(newLobby));
+      setLobby(newLobby);
     }
-  }, [userId, navigate]);
+  }, [code, playerId]);
 
-  const handleSocketError = useCallback((error: string) => {
-    toast.error(error);
-  }, []);
-
-  const handleConnect = useCallback(() => {
-    toast.success("Connected to lobby");
-  }, []);
-
-  const handleDisconnect = useCallback(() => {
-    toast.warning("Disconnected from lobby. Reconnecting...");
-  }, []);
-
-  const currentLobby = getCurrentLobby();
-  const { isConnected, isConnecting, leaveLobby } = useSocket({
-    lobbyId: currentLobby?.lobbyId || '',
-    userId,
-    onLobbyUpdate: handleLobbyUpdate,
-    onError: handleSocketError,
-    onConnect: handleConnect,
-    onDisconnect: handleDisconnect,
-  });
-
-  // Determine if current user is host (first player in list)
-  const isHost = lobby?.players?.[0]?.playerId === userId;
+  const isHost = lobby?.hostId === playerId;
   const canStart = lobby && lobby.players.length >= 2;
 
   const copyCode = () => {
@@ -129,102 +93,74 @@ const Lobby = () => {
     
     const newMessage: ChatMessage = {
       id: Date.now().toString(),
-      playerId: userId,
-      playerName,
+      playerId,
       message: chatInput.trim(),
       timestamp: new Date().toISOString(),
     };
     
-    setChatMessages(prev => [...prev, newMessage]);
+    const updatedLobby = {
+      ...lobby,
+      chatMessages: [...lobby.chatMessages, newMessage],
+    };
+    setLobby(updatedLobby);
+    localStorage.setItem('current_lobby', JSON.stringify(updatedLobby));
     setChatInput("");
   };
 
   const handleLeaveLobby = () => {
-    leaveLobby();
-    clearCurrentLobby();
+    localStorage.removeItem('current_lobby');
     navigate("/");
   };
 
-  const handleStartGame = async () => {
-    if (!lobby || !canStart || !currentLobby) return;
+  const handleStartGame = () => {
+    if (!lobby || !canStart) return;
     
     setIsStarting(true);
     
-    try {
-      // Get game config from localStorage or use defaults
-      const pendingConfig = localStorage.getItem('pending_game_config');
-      const config = pendingConfig ? JSON.parse(pendingConfig) : {
-        difficulty: 'medium',
-        rounds: 5,
-        timePerRound: 90,
-        isRhythmEnabled: false,
-      };
-      
-      await api.startGame(currentLobby.lobbyId, {
-        difficulty: config.difficulty,
-        rounds: config.rounds,
-        timePerRound: config.timePerRound,
-        isRhythmEnabled: config.rhythmMode || false,
-      });
-      
-      // Clean up pending config
-      localStorage.removeItem('pending_game_config');
-      
-      // Navigation will happen via socket update
-    } catch (error) {
-      if (error instanceof ApiError) {
-        toast.error(error.message);
-      } else {
-        toast.error("Failed to start game.");
-      }
-      setIsStarting(false);
-    }
+    // Auto-assign roles
+    const players = [...lobby.players];
+    const searcherIndex = Math.floor(Math.random() * players.length);
+    
+    players.forEach((player, i) => {
+      player.role = i === searcherIndex ? 'searcher' : 'guesser';
+    });
+    
+    const updatedLobby = {
+      ...lobby,
+      players,
+      status: 'starting' as const,
+    };
+    localStorage.setItem('current_lobby', JSON.stringify(updatedLobby));
+    
+    // Navigate to role assignment screen
+    setTimeout(() => {
+      navigate(`/lobby/${code}/assign-roles`);
+    }, 500);
   };
 
-  const getDifficultyStars = (difficulty?: string) => {
+  const getDifficultyStars = (difficulty: string) => {
     switch (difficulty) {
       case 'easy': return '⭐';
       case 'medium': return '⭐⭐';
       case 'hard': return '⭐⭐⭐';
-      default: return '⭐⭐';
+      default: return '⚙️';
     }
   };
 
-  const formatTime = (seconds?: number) => {
-    if (!seconds) return '1:30';
+  const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen scanlines flex items-center justify-center">
-        <Background />
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 text-primary animate-spin" />
-          <div className="font-mono text-muted-foreground">Loading lobby...</div>
-        </div>
-      </div>
-    );
-  }
-
   if (!lobby) {
     return (
       <div className="min-h-screen scanlines flex items-center justify-center">
         <Background />
-        <div className="font-mono text-muted-foreground">Lobby not found</div>
+        <div className="font-mono text-muted-foreground">Loading lobby...</div>
       </div>
     );
   }
-
-  // Get game config from localStorage or use defaults
-  const pendingConfig = localStorage.getItem('pending_game_config');
-  const gameConfig = pendingConfig ? JSON.parse(pendingConfig) : lobby.gameConfig || {
-    difficulty: 'medium',
-    rounds: 5,
-    timePerRound: 90,
-  };
 
   return (
     <div className="min-h-screen scanlines">
@@ -232,44 +168,24 @@ const Lobby = () => {
       <Header />
 
       <div className="min-h-screen flex flex-col items-center px-4 py-20">
-        {/* Connection Status & Top Actions */}
-        <div className="w-full max-w-2xl flex items-center justify-between gap-2 mb-4">
-          <div className="flex items-center gap-2">
-            {isConnecting ? (
-              <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                Connecting...
-              </div>
-            ) : isConnected ? (
-              <div className="flex items-center gap-2 text-green-500 font-mono text-xs">
-                <Wifi className="w-3 h-3" />
-                Connected
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-destructive font-mono text-xs">
-                <WifiOff className="w-3 h-3" />
-                Disconnected
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={copyCode}
-              className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-lg
-                hover:border-primary/50 transition-colors font-mono text-sm"
-            >
-              <Copy className="w-4 h-4" />
-              SHARE CODE
-            </button>
-            <button
-              onClick={handleLeaveLobby}
-              className="flex items-center gap-2 px-3 py-2 bg-destructive/10 border border-destructive/30 rounded-lg
-                hover:border-destructive/50 transition-colors font-mono text-sm text-destructive"
-            >
-              <LogOut className="w-4 h-4" />
-              LEAVE
-            </button>
-          </div>
+        {/* Top Actions */}
+        <div className="w-full max-w-2xl flex items-center justify-end gap-2 mb-4">
+          <button
+            onClick={copyCode}
+            className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-lg
+              hover:border-primary/50 transition-colors font-mono text-sm"
+          >
+            <Copy className="w-4 h-4" />
+            SHARE CODE
+          </button>
+          <button
+            onClick={handleLeaveLobby}
+            className="flex items-center gap-2 px-3 py-2 bg-destructive/10 border border-destructive/30 rounded-lg
+              hover:border-destructive/50 transition-colors font-mono text-sm text-destructive"
+          >
+            <LogOut className="w-4 h-4" />
+            LEAVE
+          </button>
         </div>
 
         {/* Lobby Code Header */}
@@ -281,7 +197,7 @@ const Lobby = () => {
           <ClassifiedStamp type="classified" className="mb-4" />
           <h1 className="font-mono text-xl text-muted-foreground mb-2">LOBBY CODE</h1>
           <div className="font-mono text-4xl md:text-5xl font-bold text-primary tracking-[0.3em]">
-            {lobby.lobbyCode}
+            {code}
           </div>
         </motion.div>
 
@@ -296,34 +212,29 @@ const Lobby = () => {
             <div className="flex items-center gap-2 mb-4">
               <Users className="w-4 h-4 text-primary" />
               <h2 className="font-mono font-semibold text-foreground">
-                PLAYERS ({lobby.players.length}/{gameConfig.maxPlayers || 4})
+                PLAYERS ({lobby.players.length}/{lobby.settings.maxPlayers})
               </h2>
             </div>
             
             <div className="space-y-2">
-              <AnimatePresence>
-                {lobby.players.map((player, index) => (
-                  <motion.div
-                    key={player.playerId}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 20 }}
-                    className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg"
-                  >
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                    <span className="font-mono text-foreground flex-1">{player.playerName}</span>
-                    {index === 0 && (
-                      <div className="flex items-center gap-1 text-accent">
-                        <Crown className="w-4 h-4" />
-                        <span className="font-mono text-xs">HOST</span>
-                      </div>
-                    )}
-                  </motion.div>
-                ))}
-              </AnimatePresence>
+              {lobby.players.map((player) => (
+                <div
+                  key={player.id}
+                  className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg"
+                >
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                  <span className="font-mono text-foreground flex-1">{player.username}</span>
+                  {player.isHost && (
+                    <div className="flex items-center gap-1 text-accent">
+                      <Crown className="w-4 h-4" />
+                      <span className="font-mono text-xs">HOST</span>
+                    </div>
+                  )}
+                </div>
+              ))}
               
               {/* Empty slots */}
-              {Array.from({ length: Math.max(0, (gameConfig.maxPlayers || 4) - lobby.players.length) }).map((_, i) => (
+              {Array.from({ length: lobby.settings.maxPlayers - lobby.players.length }).map((_, i) => (
                 <div
                   key={`empty-${i}`}
                   className="flex items-center gap-3 p-3 bg-muted/10 rounded-lg border border-dashed border-border"
@@ -348,10 +259,7 @@ const Lobby = () => {
                 <h2 className="font-mono font-semibold text-foreground">GAME SETTINGS</h2>
               </div>
               {isHost && (
-                <button 
-                  onClick={() => navigate('/create-room')}
-                  className="font-mono text-xs text-primary hover:underline"
-                >
+                <button className="font-mono text-xs text-primary hover:underline">
                   ⚙️ EDIT SETTINGS
                 </button>
               )}
@@ -361,31 +269,31 @@ const Lobby = () => {
               <div className="flex items-center gap-2">
                 <span className="font-mono text-sm text-muted-foreground">Difficulty:</span>
                 <span className="font-mono text-sm text-foreground">
-                  {getDifficultyStars(gameConfig.difficulty)} {gameConfig.difficulty || 'medium'}
+                  {getDifficultyStars(lobby.settings.difficulty)} {lobby.settings.difficulty}
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <Zap className="w-3 h-3 text-muted-foreground" />
                 <span className="font-mono text-sm text-muted-foreground">Rounds:</span>
                 <span className="font-mono text-sm text-foreground">
-                  {gameConfig.rounds || 5}
+                  {lobby.settings.rounds === -1 ? '∞' : lobby.settings.rounds}
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <Clock className="w-3 h-3 text-muted-foreground" />
                 <span className="font-mono text-sm text-muted-foreground">Time:</span>
                 <span className="font-mono text-sm text-foreground">
-                  {formatTime(gameConfig.timePerRound)}
+                  {formatTime(lobby.settings.timePerRound)}
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                {lobby.isPublic ? (
+                {lobby.settings.isPublic ? (
                   <Globe className="w-3 h-3 text-muted-foreground" />
                 ) : (
                   <Lock className="w-3 h-3 text-muted-foreground" />
                 )}
                 <span className="font-mono text-sm text-foreground">
-                  {lobby.isPublic ? 'Public' : 'Private'}
+                  {lobby.settings.isPublic ? 'Public' : 'Private'}
                 </span>
               </div>
             </div>
@@ -404,14 +312,14 @@ const Lobby = () => {
             </div>
             
             <div className="h-32 overflow-y-auto mb-3 space-y-2 scrollbar-thin">
-              {chatMessages.length === 0 ? (
+              {lobby.chatMessages.length === 0 ? (
                 <div className="text-center text-muted-foreground font-mono text-sm py-4">
                   No messages yet...
                 </div>
               ) : (
-                chatMessages.map((msg) => (
+                lobby.chatMessages.map((msg) => (
                   <div key={msg.id} className="font-mono text-sm">
-                    <span className="text-primary">{msg.playerName}:</span>{' '}
+                    <span className="text-primary">{msg.playerId}:</span>{' '}
                     <span className="text-foreground">{msg.message}</span>
                   </div>
                 ))
@@ -482,16 +390,7 @@ const Lobby = () => {
                 className="flex-1"
                 disabled={!canStart || isStarting}
               >
-                {isStarting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                    STARTING...
-                  </>
-                ) : canStart ? (
-                  'START GAME →'
-                ) : (
-                  'NEED 2+ PLAYERS'
-                )}
+                {isStarting ? 'STARTING...' : canStart ? 'START GAME →' : 'NEED 2+ PLAYERS'}
               </GlowButton>
             ) : (
               <div className="flex-1 py-4 bg-card border border-border rounded-lg font-mono text-sm
