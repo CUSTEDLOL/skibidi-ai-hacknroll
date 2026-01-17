@@ -70,8 +70,8 @@ const SearcherActive = () => {
   const playerId = getOrCreatePlayerId();
   const playerName = getOrCreatePlayerName();
 
-  // Mock lobby data (replace with actual websocket data later)
-  const lobbyId = (location.state as any)?.lobbyId || "demo-lobby";
+  // Get lobby context from navigation state
+  const lobbyId = (location.state as any)?.lobbyId;
   const [players, setPlayers] = useState<Player[]>([
     {
       id: playerId,
@@ -117,6 +117,14 @@ const SearcherActive = () => {
   const initialSearchResults = (location.state as any)?.initialSearchResults;
 
   const searchesRemaining = maxSearches - searchHistory.length;
+
+  // Check if lobbyId is missing and redirect
+  useEffect(() => {
+    if (!lobbyId) {
+      toast.error("Missing lobby information. Please restart the game.");
+      navigate("/");
+    }
+  }, [lobbyId, navigate]);
 
   // WebSocket event listeners
   useEffect(() => {
@@ -215,10 +223,12 @@ const SearcherActive = () => {
     setIsSearching(true);
     setShowResults(false);
 
-    // Use WebSocket to perform search
+    // Use WebSocket to perform search with topic and forbidden words
     socket.emit("searcher_make_search", {
       room_key: lobbyId,
       query: query,
+      secret_topic: secretTopic,
+      forbidden_words: forbiddenWords,
     });
   };
 

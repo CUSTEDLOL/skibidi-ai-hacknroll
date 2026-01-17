@@ -227,9 +227,21 @@ const Lobby = () => {
       if (myPlayer?.role) {
         // Navigate based on role
         if (myPlayer.role === "searcher") {
-          navigate("/game/searcher-briefing");
+          navigate("/game/searcher-briefing", {
+            state: {
+              lobbyId: lobbyIdRef.current,
+              lobbyCode: code,
+              gameConfig: data.gameConfig,
+            },
+          });
         } else if (myPlayer.role === "guesser") {
-          navigate("/game/guesser-active");
+          navigate("/game/guesser-active", {
+            state: {
+              lobbyId: lobbyIdRef.current,
+              lobbyCode: code,
+              gameConfig: data.gameConfig,
+            },
+          });
         }
       }
     };
@@ -327,9 +339,21 @@ const Lobby = () => {
       // The backend assigns roles, so we can navigate based on the player's role
       const myPlayer = result.players.find((p) => p.playerId === playerId);
       if (myPlayer?.role === "searcher") {
-        navigate("/game/searcher-briefing");
+        navigate("/game/searcher-briefing", {
+          state: {
+            lobbyId: lobbyIdRef.current,
+            lobbyCode: code,
+            gameConfig: gameConfig,
+          },
+        });
       } else if (myPlayer?.role === "guesser") {
-        navigate("/game/guesser-active");
+        navigate("/game/guesser-active", {
+          state: {
+            lobbyId: lobbyIdRef.current,
+            lobbyCode: code,
+            gameConfig: gameConfig,
+          },
+        });
       } else {
         navigate(`/lobby/${code}/assign-roles`);
       }

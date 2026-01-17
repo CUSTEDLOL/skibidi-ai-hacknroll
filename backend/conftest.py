@@ -28,6 +28,7 @@ def mock_api_keys(monkeypatch):
     """Set mock API keys for testing"""
     monkeypatch.setenv('GOOGLE_API_KEY', 'test_google_key')
     monkeypatch.setenv('GEMINI_API_KEY', 'test_gemini_key')
+    monkeypatch.setenv('GOOGLE_CSE_ID', 'test_cse_id')
 
 
 @pytest.fixture

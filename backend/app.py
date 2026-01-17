@@ -283,9 +283,13 @@ def handle_searcher_make_search(data):
         # Note: frontend sends 'room_key'
         lobby_id = data.get('room_key', '').strip()
         search_query = data.get('query', '').strip()
+        secret_topic = data.get('secret_topic', '').strip()
+        forbidden_words = data.get('forbidden_words', [])
 
         app.logger.debug(f"Lobby ID: {lobby_id}")
         app.logger.debug(f"Search query: {search_query}")
+        app.logger.debug(f"Secret topic: {secret_topic}")
+        app.logger.debug(f"Forbidden words: {forbidden_words}")
 
         if lobby_id not in lobbies:
             app.logger.debug(f"ERROR: Lobby not found")
@@ -299,11 +303,14 @@ def handle_searcher_make_search(data):
             emit('error', {'message': 'Search query is required'})
             return
 
-        # Get secret topic and forbidden words from game config
-        # For now, use a default topic - this should come from lobby state
-        secret_topic = "Moon Landing"  # TODO: Get from lobby state
-        forbidden_words = ["moon", "apollo", "armstrong",
-                           "nasa", "space"]  # TODO: Get from lobby state
+        if not secret_topic:
+            app.logger.debug(f"ERROR: Missing secret topic")
+            emit('error', {'message': 'Secret topic is required'})
+            return
+
+        if not forbidden_words:
+            app.logger.debug(f"WARNING: No forbidden words provided")
+            forbidden_words = []
 
         # Validate query doesn't contain forbidden words
         validation_result = validate_query_logic(search_query, forbidden_words)
@@ -738,14 +745,13 @@ def search_redacted():
     results = google_search(search_query)
 
     # Redact results using Gemini
-    # FIXME: redacting with gemini doesn't work?
-    # redacted_results = simple_redaction(
-    #     results, forbidden_words, search_query, secret_topic)
+    redacted_results = redact_with_gemini(
+        results, forbidden_words, search_query, secret_topic)
 
     return jsonify({
         'query': '[REDACTED]',  # Hide the query from guesser
-        'results': results,
-        'count': len(results)
+        'results': redacted_results,
+        'count': len(redacted_results)
     })
 
 
