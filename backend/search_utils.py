@@ -10,6 +10,7 @@ import random
 # API Keys (add these to environment variables)
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+GOOGLE_CSE_ID = os.environ.get('GOOGLE_CSE_ID')
 
 # Try to import Google APIs (optional dependencies)
 try:
@@ -39,15 +40,15 @@ def google_search(search_term, num_results=5):
     if not GOOGLE_SEARCH_AVAILABLE:
         return []
 
-    if not GOOGLE_API_KEY:
-        print("Warning: GOOGLE_API_KEY not set")
+    if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
+        print("Warning: GOOGLE_API_KEY or GOOGLE_CSE_ID not set")
         return []
 
     try:
         service = build("customsearch", "v1", developerKey=GOOGLE_API_KEY)
         result = service.cse().list(
             q=search_term,
-            cx=GOOGLE_API_KEY,
+            cx=GOOGLE_CSE_ID,
             num=num_results
         ).execute()
 
