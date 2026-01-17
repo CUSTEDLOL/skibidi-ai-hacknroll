@@ -1,17 +1,24 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Background } from "@/components/layout/Background";
 import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
 import { GlowButton } from "@/components/ui/GlowButton";
 import { getRandomTopics, TopicData } from "@/lib/topicData";
 import { Target, AlertTriangle, Fingerprint } from "lucide-react";
+import { toast } from "sonner";
 
 const SearcherBriefing = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [topics, setTopics] = useState<TopicData[]>([]);
   const [selectedTopic, setSelectedTopic] = useState<TopicData | null>(null);
+
+  // Get lobby context from navigation state
+  const lobbyId = (location.state as any)?.lobbyId;
+  const lobbyCode = (location.state as any)?.lobbyCode;
+  const gameConfig = (location.state as any)?.gameConfig;
 
   useEffect(() => {
     // Fetch random topics from our static DB
@@ -26,6 +33,13 @@ const SearcherBriefing = () => {
   const handleConfirmMission = () => {
     if (!selectedTopic) return;
 
+    // Verify we have lobby context
+    if (!lobbyId) {
+      toast.error("Missing lobby information. Please restart the game.");
+      navigate("/");
+      return;
+    }
+
     // Navigate to SearcherActive with the selected topic AND pregenerated results
     navigate("/game/searcher-active", {
       state: {
@@ -33,10 +47,11 @@ const SearcherBriefing = () => {
         forbiddenWords: selectedTopic.forbiddenWords,
         initialSearchResults: selectedTopic.pregeneratedResults,
         round: 1, // To do: get from global state
-        totalRounds: 5,
-        timeLimit: 120,
+        totalRounds: gameConfig?.rounds || 5,
+        timeLimit: gameConfig?.timePerRound || 120,
         maxSearches: 5,
-        lobbyId: "demo-lobby", // To do: proper ID
+        lobbyId: lobbyId,
+        lobbyCode: lobbyCode,
       },
     });
   };
@@ -54,15 +69,18 @@ const SearcherBriefing = () => {
         >
           {/* Header */}
           <div className="text-center mb-10">
-             <div className="inline-block relative">
-               <ClassifiedStamp type="top-secret" className="absolute -top-6 -right-12 rotate-12" />
-               <h1 className="text-3xl md:text-5xl font-mono font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary via-white to-primary animate-pulse">
-                 MISSION SELECTION
-               </h1>
-             </div>
-             <p className="mt-4 font-mono text-muted-foreground">
-               Select an intelligence target for this operation.
-             </p>
+            <div className="inline-block relative">
+              <ClassifiedStamp
+                type="top-secret"
+                className="absolute -top-6 -right-12 rotate-12"
+              />
+              <h1 className="text-3xl md:text-5xl font-mono font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary via-white to-primary animate-pulse">
+                MISSION SELECTION
+              </h1>
+            </div>
+            <p className="mt-4 font-mono text-muted-foreground">
+              Select an intelligence target for this operation.
+            </p>
           </div>
 
           {/* Grid of Topics */}
@@ -81,25 +99,29 @@ const SearcherBriefing = () => {
                 }`}
               >
                 <div className="flex justify-between items-start mb-4">
-                   <div className="p-2 rounded bg-muted/50 border border-white/5">
-                      <Target className="w-5 h-5 text-accent" />
-                   </div>
-                   <div className={`px-2 py-0.5 rounded text-[10px] uppercase font-mono border ${
-                      topic.difficulty === 'easy' ? 'border-green-500/50 text-green-500' :
-                      topic.difficulty === 'medium' ? 'border-yellow-500/50 text-yellow-500' :
-                      'border-red-500/50 text-red-500'
-                   }`}>
-                      {topic.difficulty}
-                   </div>
+                  <div className="p-2 rounded bg-muted/50 border border-white/5">
+                    <Target className="w-5 h-5 text-accent" />
+                  </div>
+                  <div
+                    className={`px-2 py-0.5 rounded text-[10px] uppercase font-mono border ${
+                      topic.difficulty === "easy"
+                        ? "border-green-500/50 text-green-500"
+                        : topic.difficulty === "medium"
+                          ? "border-yellow-500/50 text-yellow-500"
+                          : "border-red-500/50 text-red-500"
+                    }`}
+                  >
+                    {topic.difficulty}
+                  </div>
                 </div>
 
                 <h3 className="font-mono text-xl font-bold mb-2 group-hover:text-primary transition-colors">
                   {topic.title}
                 </h3>
-                
+
                 <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
-                   <AlertTriangle className="w-3 h-3" />
-                   {topic.forbiddenWords.length} FORBIDDEN KEYWORDS
+                  <AlertTriangle className="w-3 h-3" />
+                  {topic.forbiddenWords.length} FORBIDDEN KEYWORDS
                 </div>
 
                 {selectedTopic?.id === topic.id && (
@@ -116,17 +138,16 @@ const SearcherBriefing = () => {
 
           {/* Confirm Button */}
           <div className="flex justify-center">
-             <GlowButton
-                onClick={handleConfirmMission}
-                disabled={!selectedTopic}
-                size="lg"
-                className="w-full md:w-auto min-w-[300px]"
-                icon={<Fingerprint className="w-5 h-5" />}
-             >
-                {selectedTopic ? "CONFIRM TARGET" : "SELECT A TARGET"}
-             </GlowButton>
+            <GlowButton
+              onClick={handleConfirmMission}
+              disabled={!selectedTopic}
+              size="lg"
+              className="w-full md:w-auto min-w-[300px]"
+              icon={<Fingerprint className="w-5 h-5" />}
+            >
+              {selectedTopic ? "CONFIRM TARGET" : "SELECT A TARGET"}
+            </GlowButton>
           </div>
-
         </motion.div>
       </div>
     </div>

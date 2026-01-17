@@ -1,239 +1,190 @@
 """
 Shared utility functions for search and redaction.
-Used by both app.py and websocket_server.py
+Optimized for speed and token efficiency.
 """
 import os
 import re
 import json
 import random
+import logging
+from flask import Flask
+from functools import lru_cache
 
-# API Keys (add these to environment variables)
+# Configure logging - when imported, this will use the parent's logging config
+
+app = Flask(__name__)
+
+# API Keys
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+GOOGLE_CSE_ID = os.environ.get('GOOGLE_CSE_ID')
 
-# Try to import Google APIs (optional dependencies)
+# Optional Dependencies
 try:
     from googleapiclient.discovery import build
     GOOGLE_SEARCH_AVAILABLE = True
 except ImportError:
     GOOGLE_SEARCH_AVAILABLE = False
-    print("Warning: google-api-python-client not installed. Google Search will not work.")
 
 try:
     import google.genai as genai
-    if GEMINI_API_KEY:
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-pro')
-    GEMINI_AVAILABLE = GEMINI_API_KEY is not None
+    gemini_client = genai.Client(
+        api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+    GEMINI_AVAILABLE = True if gemini_client else False
 except ImportError:
     GEMINI_AVAILABLE = False
-    model = None
-    print("Warning: google-generativeai not installed. Gemini redaction will not work.")
+    gemini_client = None
 
 
+@lru_cache(maxsize=50)
 def google_search(search_term, num_results=5):
-    """
-    Perform Google search using Custom Search API
-    Returns list of results with title, snippet, link
-    """
-    if not GOOGLE_SEARCH_AVAILABLE:
-        return []
-
-    if not GOOGLE_API_KEY:
-        print("Warning: GOOGLE_API_KEY not set")
+    """Perform Google search with local caching for speed."""
+    if not (GOOGLE_SEARCH_AVAILABLE and GOOGLE_API_KEY and GOOGLE_CSE_ID):
         return []
 
     try:
         service = build("customsearch", "v1", developerKey=GOOGLE_API_KEY)
-        result = service.cse().list(
-            q=search_term,
-            cx=GOOGLE_API_KEY,
-            num=num_results
-        ).execute()
+        result = service.cse().list(q=search_term, cx=GOOGLE_CSE_ID, num=num_results).execute()
 
         search_results = []
-        if 'items' in result:
-            for item in result['items']:
-                search_results.append({
-                    'title': item.get('title', ''),
-                    'snippet': item.get('snippet', ''),
-                    'link': item.get('link', ''),
-                    'displayLink': item.get('displayLink', '')
-                })
-
+        for item in result.get('items', []):
+            search_results.append({
+                'title': item.get('title', ''),
+                'snippet': item.get('snippet', ''),
+                'link': item.get('link', ''),
+                'displayLink': item.get('displayLink', '')
+            })
         return search_results
     except Exception as e:
-        print(f"Search error: {e}")
+        app.logger.error(f"Search error: {e}")
         return []
 
 
 def redact_with_gemini(search_results, forbidden_words, search_query, secret_topic):
-    """
-    Use Gemini to intelligently redact search results
-    Returns redacted results with redaction blocks
-    """
-    if not GEMINI_AVAILABLE or not model:
-        return simple_redaction(search_results, forbidden_words, search_query)
+    """Refine redaction using Gemini by only sending necessary text strings."""
+    local_redacted = simple_redaction(
+        search_results, forbidden_words, search_query)
 
-    # Prepare the prompt for Gemini
+    if not GEMINI_AVAILABLE:
+        return local_redacted
+
+    text_to_refine = []
+    for i, res in enumerate(local_redacted):
+        text_to_refine.append(
+            {"id": i, "t": res['title'], "s": res['snippet']})
+
+    # Note the double {{ }} below to escape f-string formatting
     prompt = f"""
-You are a redaction AI for a guessing game. Your job is to redact search results strategically.
-
-SECRET TOPIC: {secret_topic}
-FORBIDDEN WORDS: {', '.join(forbidden_words)}
-SEARCH QUERY USED: {search_query}
-
-REDACTION RULES:
-1. Replace the secret topic name with [REDACTED]
-2. Replace all forbidden words with [REDACTED]
-3. Replace all words from the search query with [REDACTED]
-4. Replace obvious synonyms and variations of forbidden words with [REDACTED]
-5. Keep enough context clues (dates, locations, related names, descriptions) for a smart person to guess
-6. Make sure to preserve sentence structure (keep articles, prepositions, conjunctions)
-
-SEARCH RESULTS TO REDACT:
-{json.dumps(search_results, indent=2)}
-
-Return ONLY the redacted results in JSON format:
-[
-  {{
-    "title": "redacted title",
-    "snippet": "redacted snippet with [REDACTED] blocks",
-    "link": "original link",
-    "displayLink": "domain"
-  }}
-]
-
-Important: Use exactly [REDACTED] for each redaction. Be strategic - leave enough clues but hide the obvious answer.
-"""
+    Refine redaction for: {secret_topic}. 
+    Redact remaining synonyms or giveaways with [REDACTED].
+    DATA: {json.dumps(text_to_refine)}
+    Return ONLY JSON: [{{ "id": 0, "t": "...", "s": "..." }}]
+    """
 
     try:
-        response = model.generate_content(prompt)
-        redacted_text = response.text
+        response = gemini_client.models.generate_content(
+            model='gemini-1.5-flash',
+            content=prompt,
+            # Fixed here too
+            config={{'response_mime_type': 'application/json'}}
+        )
 
-        # Extract JSON from response (handle markdown code blocks)
-        if '```json' in redacted_text:
-            redacted_text = redacted_text.split(
-                '```json')[1].split('```')[0].strip()
-        elif '```' in redacted_text:
-            redacted_text = redacted_text.split(
-                '```')[1].split('```')[0].strip()
+        # Some versions of the SDK return response.text, others response.candidates[0].content.parts[0].text
+        # Adding a small check for robustness
+        content_text = response.text if hasattr(
+            response, 'text') else response.candidates[0].content.parts[0].text
 
-        redacted_results = json.loads(redacted_text)
-        return redacted_results
+        refined_data = json.loads(content_text)
+        for item in refined_data:
+            idx = item['id']
+            if 0 <= idx < len(local_redacted):
+                local_redacted[idx]['title'] = item['t']
+                local_redacted[idx]['snippet'] = item['s']
+        return local_redacted
     except Exception as e:
-        print(f"Gemini redaction error: {e}")
-        # Fallback: Simple regex-based redaction
-        return simple_redaction(search_results, forbidden_words, search_query)
+        app.logger.error(f"Gemini error: {e}")
+        return local_redacted
 
 
 def simple_redaction(search_results, forbidden_words, search_query):
-    """
-    Fallback simple redaction if Gemini fails
-    """
+    """Fast local redaction using compiled Regex."""
+    pattern = _get_redaction_pattern(tuple(forbidden_words), search_query)
+    if not pattern:
+        return search_results
+
     redacted_results = []
-
-    # Combine all words to redact
-    words_to_redact = list(forbidden_words) + search_query.lower().split()
-
     for result in search_results:
-        redacted_result = result.copy()
-
-        # Redact title and snippet
-        for field in ['title', 'snippet']:
-            if field in result:
-                text = result[field]
-                for word in words_to_redact:
-                    if len(word) > 2:  # Only redact words longer than 2 chars
-                        # Case-insensitive replacement
-                        pattern = re.compile(re.escape(word), re.IGNORECASE)
-                        text = pattern.sub('[REDACTED]', text)
-                redacted_result[field] = text
-
-        redacted_results.append(redacted_result)
-
+        res = result.copy()
+        res['title'] = pattern.sub('[REDACTED]', res.get('title', ''))
+        res['snippet'] = pattern.sub('[REDACTED]', res.get('snippet', ''))
+        redacted_results.append(res)
     return redacted_results
 
 
+def identify_redacted_terms(search_results, forbidden_words, search_query, secret_topic):
+    """
+    REQUIRED BY WEBSOCKET SERVER.
+    Identifies positions of terms to be redacted for UI highlighting.
+    """
+    # Include secret topic in the words to find
+    all_forbidden = list(forbidden_words) + [secret_topic]
+    pattern = _get_redaction_pattern(tuple(all_forbidden), search_query)
+
+    results_with_indicators = []
+    for result in search_results:
+        res_copy = result.copy()
+        res_copy['redactedTerms'] = {'title': [], 'snippet': []}
+
+        if not pattern:
+            results_with_indicators.append(res_copy)
+            continue
+
+        for field in ['title', 'snippet']:
+            text = result.get(field, '')
+            res_copy['redactedTerms'][field] = [
+                {'start': m.start(), 'end': m.end(), 'word': m.group()}
+                for m in pattern.finditer(text)
+            ]
+        results_with_indicators.append(res_copy)
+
+    return results_with_indicators
+
+
+@lru_cache(maxsize=128)
+def _get_redaction_pattern(forbidden_tuple, search_query):
+    """Helper to compile and cache regex patterns."""
+    words = set(forbidden_tuple)
+    words.update(search_query.lower().split())
+    clean_words = [re.escape(w) for w in words if len(w) > 2]
+    if not clean_words:
+        return None
+    return re.compile(r'\b(' + '|'.join(clean_words) + r')\b', re.IGNORECASE)
+
+
 def validate_query_logic(query, forbidden_words):
-    """
-    Validate if a search query contains forbidden words
-    Returns validation result with violations
-    """
-    if not query or not forbidden_words:
-        return {
-            'valid': True,
-            'violations': [],
-            'message': 'Query is valid'
-        }
-
+    """Validate query against forbidden list."""
+    if not query:
+        return {'valid': True, 'violations': []}
     query_lower = query.lower()
-    violations = []
-
-    for word in forbidden_words:
-        word_lower = word.lower()
-        # Check if forbidden word appears in query (whole word match)
-        pattern = r'\b' + re.escape(word_lower) + r'\b'
-        if re.search(pattern, query_lower):
-            violations.append(word)
-
+    violations = [w for w in forbidden_words if re.search(
+        r'\b' + re.escape(w.lower()) + r'\b', query_lower)]
     return {
         'valid': len(violations) == 0,
         'violations': violations,
-        'message': f'Query contains forbidden words: {", ".join(violations)}' if violations else 'Query is valid'
+        'message': f'Forbidden words found: {", ".join(violations)}' if violations else 'Valid'
     }
 
 
 def get_random_topic_data():
-    """
-    Generate a random topic with forbidden words
-    Returns a dictionary with topic and forbidden_words
-    """
+    """Static list of topics for the game."""
     topics = [
-        {
-            'topic': 'Moon Landing',
-            'forbidden_words': ['moon', 'apollo', 'armstrong', 'nasa', 'space', 'lunar', 'astronaut']
-        },
-        {
-            'topic': 'Pizza',
-            'forbidden_words': ['pizza', 'cheese', 'pepperoni', 'italian', 'dough', 'slice']
-        },
-        {
-            'topic': 'Bitcoin',
-            'forbidden_words': ['bitcoin', 'crypto', 'blockchain', 'satoshi', 'mining', 'wallet']
-        },
-        {
-            'topic': 'Harry Potter',
-            'forbidden_words': ['harry', 'potter', 'hogwarts', 'voldemort', 'wizard', 'magic']
-        },
-        {
-            'topic': 'The Eiffel Tower',
-            'forbidden_words': ['eiffel', 'tower', 'paris', 'france', 'landmark', 'iron']
-        },
-        {
-            'topic': 'The Beatles',
-            'forbidden_words': ['beatles', 'lennon', 'mccartney', 'band', 'music', 'rock']
-        },
-        {
-            'topic': 'The Internet',
-            'forbidden_words': ['internet', 'web', 'online', 'network', 'digital', 'cyber']
-        },
-        {
-            'topic': 'Mount Everest',
-            'forbidden_words': ['everest', 'mountain', 'himalaya', 'summit', 'climb', 'peak']
-        },
-        {
-            'topic': 'The Mona Lisa',
-            'forbidden_words': ['mona', 'lisa', 'da vinci', 'painting', 'louvre', 'art']
-        },
-        {
-            'topic': 'The Great Wall of China',
-            'forbidden_words': ['wall', 'china', 'great', 'ancient', 'fortification', 'ming']
-        }
+        {'topic': 'Moon Landing', 'forbidden_words': [
+            'moon', 'apollo', 'armstrong', 'nasa', 'space', 'lunar']},
+        {'topic': 'Pizza', 'forbidden_words': [
+            'pizza', 'cheese', 'pepperoni', 'italian', 'dough']},
+        {'topic': 'Bitcoin', 'forbidden_words': [
+            'bitcoin', 'crypto', 'blockchain', 'satoshi', 'mining']},
+        {'topic': 'The Eiffel Tower', 'forbidden_words': [
+            'eiffel', 'tower', 'paris', 'france', 'iron']}
     ]
-
-    selected = random.choice(topics)
-    return {
-        'topic': selected['topic'],
-        'forbidden_words': selected['forbidden_words']
-    }
+    return random.choice(topics)
