@@ -4,13 +4,13 @@ import os
 import re
 import json
 import random
+from typing import List
 
 app = Flask(__name__)
 CORS(app)
 
 # API Keys (add these to environment variables)
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
-GOOGLE_CSE_ID = os.environ.get('GOOGLE_CSE_ID')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
 # Try to import Google APIs (optional dependencies)
@@ -41,15 +41,15 @@ def google_search(search_term, num_results=5):
     if not GOOGLE_SEARCH_AVAILABLE:
         return []
 
-    if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
-        print("Warning: GOOGLE_API_KEY or GOOGLE_CSE_ID not set")
+    if not GOOGLE_API_KEY:
+        print("Warning: GOOGLE_API_KEY not set")
         return []
-
+    
     try:
         service = build("customsearch", "v1", developerKey=GOOGLE_API_KEY)
         result = service.cse().list(
             q=search_term,
-            cx=GOOGLE_CSE_ID,
+            cx=GOOGLE_API_KEY,
             num=num_results
         ).execute()
 
@@ -155,6 +155,76 @@ def simple_redaction(search_results, forbidden_words, search_query):
     return redacted_results
 
 
+def get_random_topic_data() -> dict:
+    """
+    Generate a random topic with forbidden words.
+    Returns a dictionary with 'topic' and 'forbidden_words' keys.
+    """
+    topics = [
+        {
+            'topic': 'The Moon Landing',
+            'forbidden_words': ['moon', 'landing', 'apollo', 'armstrong', 'nasa', 'space']
+        },
+        {
+            'topic': 'Harry Potter',
+            'forbidden_words': ['harry', 'potter', 'hogwarts', 'wizard', 'magic', 'rowling']
+        },
+        {
+            'topic': 'The Titanic',
+            'forbidden_words': ['titanic', 'ship', 'iceberg', 'sink', 'dicaprio', 'atlantic']
+        },
+        {
+            'topic': 'Bitcoin',
+            'forbidden_words': ['bitcoin', 'cryptocurrency', 'blockchain', 'satoshi', 'crypto', 'mining']
+        },
+        {
+            'topic': 'The Eiffel Tower',
+            'forbidden_words': ['eiffel', 'tower', 'paris', 'france', 'gustave', 'iron']
+        },
+        {
+            'topic': 'Albert Einstein',
+            'forbidden_words': ['einstein', 'relativity', 'physics', 'scientist', 'genius', 'nobel']
+        },
+        {
+            'topic': 'The Great Wall of China',
+            'forbidden_words': ['wall', 'china', 'great', 'dynasty', 'beijing', 'ancient']
+        },
+        {
+            'topic': 'The iPhone',
+            'forbidden_words': ['iphone', 'apple', 'smartphone', 'jobs', 'ios', 'mobile']
+        },
+        {
+            'topic': 'World War II',
+            'forbidden_words': ['war', 'world', 'hitler', 'nazi', 'allies', 'holocaust']
+        },
+        {
+            'topic': 'The Olympics',
+            'forbidden_words': ['olympics', 'games', 'medal', 'athlete', 'sports', 'torch']
+        }
+    ]
+    return random.choice(topics)
+
+
+def validate_query_logic(query: str, forbidden_words: List[str]) -> dict:
+    """
+    Validate if a query contains forbidden words.
+    Returns a dictionary with 'valid' (bool), 'violations' (list), and 'message' (str).
+    """
+    query_lower = query.lower()
+    forbidden_lower = [word.lower() for word in forbidden_words]
+    
+    violations = []
+    for word in forbidden_lower:
+        if word in query_lower:
+            violations.append(word)
+    
+    return {
+        'valid': len(violations) == 0,
+        'violations': violations,
+        'message': f"Forbidden words detected: {', '.join(violations)}" if violations else "Query is valid"
+    }
+
+
 @app.route('/api/search', methods=['POST'])
 def search():
     """
@@ -209,19 +279,11 @@ def validate_query():
     Returns validation result before search is performed
     """
     data = request.json
-    query = data.get('query', '').lower()
-    forbidden_words = [word.lower() for word in data.get('forbidden_words', [])]
+    query = data.get('query', '')
+    forbidden_words = data.get('forbidden_words', [])
 
-    violations = []
-    for word in forbidden_words:
-        if word in query:
-            violations.append(word)
-
-    return jsonify({
-        'valid': len(violations) == 0,
-        'violations': violations,
-        'message': f"Forbidden words detected: {', '.join(violations)}" if violations else "Query is valid"
-    })
+    validation_result = validate_query_logic(query, forbidden_words)
+    return jsonify(validation_result)
 
 
 @app.route('/api/topics/random', methods=['GET'])
@@ -229,50 +291,7 @@ def get_random_topic():
     """
     Generate a random topic with forbidden words
     """
-    topics = [
-        {
-            'topic': 'The Moon Landing',
-            'forbidden_words': ['moon', 'landing', 'apollo', 'armstrong', 'nasa', 'space']
-        },
-        {
-            'topic': 'Harry Potter',
-            'forbidden_words': ['harry', 'potter', 'hogwarts', 'wizard', 'magic', 'rowling']
-        },
-        {
-            'topic': 'The Titanic',
-            'forbidden_words': ['titanic', 'ship', 'iceberg', 'sink', 'dicaprio', 'atlantic']
-        },
-        {
-            'topic': 'Bitcoin',
-            'forbidden_words': ['bitcoin', 'cryptocurrency', 'blockchain', 'satoshi', 'crypto', 'mining']
-        },
-        {
-            'topic': 'The Eiffel Tower',
-            'forbidden_words': ['eiffel', 'tower', 'paris', 'france', 'gustave', 'iron']
-        },
-        {
-            'topic': 'Albert Einstein',
-            'forbidden_words': ['einstein', 'relativity', 'physics', 'scientist', 'genius', 'nobel']
-        },
-        {
-            'topic': 'The Great Wall of China',
-            'forbidden_words': ['wall', 'china', 'great', 'dynasty', 'beijing', 'ancient']
-        },
-        {
-            'topic': 'The iPhone',
-            'forbidden_words': ['iphone', 'apple', 'smartphone', 'jobs', 'ios', 'mobile']
-        },
-        {
-            'topic': 'World War II',
-            'forbidden_words': ['war', 'world', 'hitler', 'nazi', 'allies', 'holocaust']
-        },
-        {
-            'topic': 'The Olympics',
-            'forbidden_words': ['olympics', 'games', 'medal', 'athlete', 'sports', 'torch']
-        }
-    ]
-
-    return jsonify(random.choice(topics))
+    return jsonify(get_random_topic_data())
 
 
 @app.route('/api/health', methods=['GET'])
