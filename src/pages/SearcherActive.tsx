@@ -14,7 +14,7 @@ import { ChatPanel } from "@/components/ui/ChatPanel";
 import { PlayerLeaderboard } from "@/components/ui/PlayerLeaderboard";
 import { LeaveGameButton } from "@/components/ui/LeaveGameButton";
 import { EmotePanel } from "@/components/ui/EmotePanel";
-import { X, Search, Lightbulb, Send } from "lucide-react";
+import { X, Search, Lightbulb, Send, History } from "lucide-react";
 import { GlowButton } from "@/components/ui/GlowButton";
 import {
   search,
@@ -466,8 +466,8 @@ const SearcherActive = () => {
               className="bg-card border border-border rounded-lg p-4 flex-shrink-0"
             >
               <div className="flex items-center gap-2 mb-3">
-                <Search className="w-4 h-4 text-primary" />
-                <span className="font-mono text-sm font-bold">
+                <History className="w-4 h-4 text-muted-foreground" />
+                <span className="font-mono text-sm text-muted-foreground">
                   SEARCH HISTORY
                 </span>
               </div>
@@ -495,6 +495,25 @@ const SearcherActive = () => {
                   ))}
                 </ul>
               )}
+            </motion.div>
+
+            {/* Tips */}
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.5 }}
+              className="bg-card border border-border rounded-lg p-4 flex-shrink-0"
+            >
+              <div className="flex items-center gap-2 mb-4">
+                <Lightbulb className="w-4 h-4 text-accent" />
+                <span className="font-mono text-sm text-accent">TIPS</span>
+              </div>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li>• Try related terms and synonyms</li>
+                <li>• Think laterally about the topic</li>
+                <li>• Consider historical context</li>
+                <li>• Use descriptive adjectives</li>
+              </ul>
             </motion.div>
 
             {/* Emote Panel */}

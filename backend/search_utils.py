@@ -7,15 +7,12 @@ import re
 import json
 import random
 import logging
+from flask import Flask
 from functools import lru_cache
 
-# Configure logging
-logging.basicConfig(
-    filename='search_utils.log',
-    level=logging.DEBUG,
-    format='%(asctime)s %(levelname)s %(name)s : %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Configure logging - when imported, this will use the parent's logging config
+
+app = Flask(__name__)
 
 # API Keys
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
@@ -59,7 +56,7 @@ def google_search(search_term, num_results=5):
             })
         return search_results
     except Exception as e:
-        logger.error(f"Search error: {e}")
+        app.logger.error(f"Search error: {e}")
         return []
 
 
@@ -105,7 +102,7 @@ def redact_with_gemini(search_results, forbidden_words, search_query, secret_top
                 local_redacted[idx]['snippet'] = item['s']
         return local_redacted
     except Exception as e:
-        logger.error(f"Gemini error: {e}")
+        app.logger.error(f"Gemini error: {e}")
         return local_redacted
 
 

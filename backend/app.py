@@ -13,6 +13,7 @@ from typing import List
 from search_utils import (
     google_search,
     redact_with_gemini,
+    simple_redaction,
     validate_query_logic,
     get_random_topic_data,
     GOOGLE_API_KEY,
@@ -33,8 +34,8 @@ logging.basicConfig(
 )
 
 # Redirect stdout to log file (capture any remaining print() statements)
-sys.stdout = open('app_stdout.log', 'a', buffering=1)
-sys.stderr = open('app_stderr.log', 'a', buffering=1)
+sys.stdout = open('app.log', 'a', buffering=1)
+sys.stderr = open('app.log', 'a', buffering=1)
 
 # ============ In-Memory Storage (replace with database later) ============
 lobbies = {}  # Store active lobbies
@@ -267,6 +268,160 @@ def handle_ping(data):
     app.logger.debug(f"[SocketIO] Received ping from frontend: {data}")
     emit("pong", {"msg": "pong from backend", "time": data.get("time")})
     emit("debug", "Ping event received and pong sent.")
+
+
+# ============ Game WebSocket Handlers ============
+
+@socketio.on('searcher_make_search')
+def handle_searcher_make_search(data):
+    """Searcher makes a search query"""
+    app.logger.debug(f"\n========== searcher_make_search ==========")
+    app.logger.debug(f"Request from: {request.sid}")
+    app.logger.debug(f"Data received: {data}")
+
+    try:
+        # Note: frontend sends 'room_key'
+        lobby_id = data.get('room_key', '').strip()
+        search_query = data.get('query', '').strip()
+
+        app.logger.debug(f"Lobby ID: {lobby_id}")
+        app.logger.debug(f"Search query: {search_query}")
+
+        if lobby_id not in lobbies:
+            app.logger.debug(f"ERROR: Lobby not found")
+            emit('error', {'message': 'Lobby not found'})
+            return
+
+        lobby = lobbies[lobby_id]
+
+        if not search_query:
+            app.logger.debug(f"ERROR: Empty search query")
+            emit('error', {'message': 'Search query is required'})
+            return
+
+        # Get secret topic and forbidden words from game config
+        # For now, use a default topic - this should come from lobby state
+        secret_topic = "Moon Landing"  # TODO: Get from lobby state
+        forbidden_words = ["moon", "apollo", "armstrong",
+                           "nasa", "space"]  # TODO: Get from lobby state
+
+        # Validate query doesn't contain forbidden words
+        validation_result = validate_query_logic(search_query, forbidden_words)
+        app.logger.debug(f"Validation result: {validation_result}")
+
+        if not validation_result['valid']:
+            app.logger.debug(
+                f"Query validation failed: {validation_result['violations']}")
+            emit('search_result', {
+                'query': search_query,
+                'results': [],
+                'valid': False,
+                'violations': validation_result['violations'],
+                'message': validation_result['message']
+            })
+            return
+
+        # Perform search
+        app.logger.debug(f"Performing Google search...")
+        results = google_search(search_query, num_results=5)
+        app.logger.debug(f"Google search returned: {len(results)} results")
+
+        if not results:
+            app.logger.debug(f"WARNING: No results from Google search")
+            emit('search_result', {
+                'query': search_query,
+                'results': [],
+                'count': 0,
+                'valid': True,
+                'query_index': 0,
+                'message': 'Search completed but no results found'
+            })
+            return
+
+        # Transform results to include redaction indicators
+        results_with_indicators = []
+        for result in results:
+            results_with_indicators.append({
+                'title': result.get('title', ''),
+                'snippet': result.get('snippet', ''),
+                'link': result.get('link', ''),
+                'displayLink': result.get('displayLink', ''),
+                # TODO: Implement redaction logic
+                'redactedTerms': {'title': [], 'snippet': []}
+            })
+
+        app.logger.debug(
+            f"Sending results with {len(results_with_indicators)} items")
+
+        # Send results back to searcher
+        emit('search_result', {
+            'query': search_query,
+            'results': results_with_indicators,
+            'count': len(results),
+            'valid': True,
+            'query_index': 0,
+            'message': f'Search completed: {len(results)} results'
+        })
+
+        app.logger.debug(f"Successfully emitted search_result")
+
+    except Exception as e:
+        app.logger.error(f"CRITICAL ERROR in handle_searcher_make_search: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            emit('error', {'message': f'Search failed: {str(e)}'})
+        except:
+            app.logger.error(f"FAILED TO EMIT ERROR MESSAGE")
+
+    app.logger.debug(f"========== searcher_make_search END ==========\n")
+
+
+@socketio.on('searcher_select_query')
+def handle_searcher_select_query(data):
+    """Searcher selects which query result to send to guessers"""
+    app.logger.debug(f"\n========== searcher_select_query ==========")
+    app.logger.debug(f"Request from: {request.sid}")
+    app.logger.debug(f"Data received: {data}")
+
+    try:
+        lobby_id = data.get('room_key', '').strip()
+        query_index = data.get('query_index')
+
+        app.logger.debug(f"Lobby ID: {lobby_id}")
+        app.logger.debug(f"Query index: {query_index}")
+
+        if lobby_id not in lobbies:
+            app.logger.debug(f"ERROR: Lobby not found")
+            emit('error', {'message': 'Lobby not found'})
+            return
+
+        lobby = lobbies[lobby_id]
+
+        # Notify searcher that query was selected
+        emit('query_selected', {
+            'query_index': query_index,
+            'message': 'Query selected and sent to guessers'
+        })
+
+        app.logger.debug(f"Notified searcher of selection")
+
+        # TODO: Send redacted results to guessers
+        # This would require storing search results in lobby state
+        # and implementing redaction logic
+
+    except Exception as e:
+        app.logger.error(
+            f"CRITICAL ERROR in handle_searcher_select_query: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            emit('error', {'message': f'Failed to select query: {str(e)}'})
+        except:
+            app.logger.error(f"FAILED TO EMIT ERROR MESSAGE")
+
+    app.logger.debug(f"========== searcher_select_query END ==========\n")
+
 
 # ============ Lobby Endpoints ============
 
@@ -583,13 +738,14 @@ def search_redacted():
     results = google_search(search_query)
 
     # Redact results using Gemini
-    redacted_results = redact_with_gemini(
-        results, forbidden_words, search_query, secret_topic)
+    # FIXME: redacting with gemini doesn't work?
+    # redacted_results = simple_redaction(
+    #     results, forbidden_words, search_query, secret_topic)
 
     return jsonify({
         'query': '[REDACTED]',  # Hide the query from guesser
-        'results': redacted_results,
-        'count': len(redacted_results)
+        'results': results,
+        'count': len(results)
     })
 
 

@@ -27,7 +27,10 @@ const App = () => (
           <Route path="/create-room" element={<CreateRoom />} />
           <Route path="/lobby/:code" element={<Lobby />} />
           <Route path="/lobby/:code/assign-roles" element={<AssignRoles />} />
-          <Route path="/game/searcher-briefing" element={<SearcherBriefing />} />
+          <Route
+            path="/game/searcher-briefing"
+            element={<SearcherBriefing />}
+          />
           <Route path="/game/searcher-active" element={<SearcherActive />} />
           <Route path="/game/guesser-active" element={<GuesserActive />} />
           <Route path="/game/round-result" element={<RoundResult />} />
