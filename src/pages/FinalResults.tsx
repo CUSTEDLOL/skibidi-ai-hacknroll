@@ -3,7 +3,14 @@ import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Background } from "@/components/layout/Background";
-import { Trophy, Star, Clock, Target, RotateCcw, BarChart3 } from "lucide-react";
+import {
+  Trophy,
+  Star,
+  Clock,
+  Target,
+  RotateCcw,
+  BarChart3,
+} from "lucide-react";
 import { GlowButton } from "@/components/ui/GlowButton";
 import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
 
@@ -21,9 +28,35 @@ const FinalResults = () => {
   const globalRank = 47;
 
   const achievements = [
-    { icon: <Star className="w-5 h-5" />, name: "Speed Demon", description: "Completed 3 rounds under 1 minute" },
-    { icon: <Target className="w-5 h-5" />, name: "First Try Expert", description: "Guessed correctly on first attempt twice" },
+    {
+      icon: <Star className="w-5 h-5" />,
+      name: "Speed Demon",
+      description: "Completed 3 rounds under 1 minute",
+    },
+    {
+      icon: <Target className="w-5 h-5" />,
+      name: "First Try Expert",
+      description: "Guessed correctly on first attempt twice",
+    },
   ];
+
+  const getLobbyCode = () => {
+    const settings = localStorage.getItem("current_lobby_settings");
+    if (settings) {
+      const parsed = JSON.parse(settings);
+      return parsed.lobbyCode || "";
+    }
+    return "";
+  };
+
+  const handlePlayAgain = () => {
+    const code = getLobbyCode();
+    if (code) {
+      navigate(`/lobby/${code}`);
+    } else {
+      navigate("/");
+    }
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => setShowContent(true), 500);
@@ -70,9 +103,9 @@ const FinalResults = () => {
             className="text-center mb-8"
           >
             <motion.div
-              animate={{ 
+              animate={{
                 rotate: [0, -5, 5, 0],
-                scale: [1, 1.1, 1]
+                scale: [1, 1.1, 1],
               }}
               transition={{ duration: 0.5, delay: 0.5 }}
               className="inline-block mb-4"
@@ -82,7 +115,11 @@ const FinalResults = () => {
             <h1 className="font-mono text-3xl font-bold text-foreground mb-2">
               CASE CLOSED
             </h1>
-            <ClassifiedStamp type="classified" className="inline-block" animate={true} />
+            <ClassifiedStamp
+              type="classified"
+              className="inline-block"
+              animate={true}
+            />
           </motion.div>
 
           {/* Main Score Card */}
@@ -93,38 +130,53 @@ const FinalResults = () => {
             className="bg-card border-2 border-primary/30 rounded-lg p-6 mb-6"
           >
             <div className="text-center mb-6">
-              <p className="font-mono text-xs text-muted-foreground mb-2">FINAL SCORE</p>
-              <motion.div
-                className="text-5xl font-bold text-primary text-glow-cyan font-mono"
-              >
+              <p className="font-mono text-xs text-muted-foreground mb-2">
+                FINAL SCORE
+              </p>
+              <motion.div className="text-5xl font-bold text-primary text-glow-cyan font-mono">
                 {animatedScore}
               </motion.div>
-              <p className="font-mono text-xs text-muted-foreground mt-1">points</p>
+              <p className="font-mono text-xs text-muted-foreground mt-1">
+                points
+              </p>
             </div>
 
             {/* Stats Grid */}
             <div className="grid grid-cols-3 gap-4 mb-6">
               <div className="text-center p-3 bg-secondary/30 rounded-lg">
                 <Target className="w-5 h-5 text-primary mx-auto mb-1" />
-                <p className="font-mono text-lg font-bold text-foreground">{roundsCompleted}/{totalRounds}</p>
-                <p className="font-mono text-xs text-muted-foreground">Rounds</p>
+                <p className="font-mono text-lg font-bold text-foreground">
+                  {roundsCompleted}/{totalRounds}
+                </p>
+                <p className="font-mono text-xs text-muted-foreground">
+                  Rounds
+                </p>
               </div>
               <div className="text-center p-3 bg-secondary/30 rounded-lg">
                 <Star className="w-5 h-5 text-accent mx-auto mb-1" />
-                <p className="font-mono text-lg font-bold text-foreground">{correctGuesses}</p>
-                <p className="font-mono text-xs text-muted-foreground">Correct</p>
+                <p className="font-mono text-lg font-bold text-foreground">
+                  {correctGuesses}
+                </p>
+                <p className="font-mono text-xs text-muted-foreground">
+                  Correct
+                </p>
               </div>
               <div className="text-center p-3 bg-secondary/30 rounded-lg">
                 <Clock className="w-5 h-5 text-primary mx-auto mb-1" />
-                <p className="font-mono text-lg font-bold text-foreground">{averageTime}</p>
-                <p className="font-mono text-xs text-muted-foreground">Avg Time</p>
+                <p className="font-mono text-lg font-bold text-foreground">
+                  {averageTime}
+                </p>
+                <p className="font-mono text-xs text-muted-foreground">
+                  Avg Time
+                </p>
               </div>
             </div>
 
             {/* Global Rank */}
             <div className="text-center p-3 bg-accent/10 border border-accent/30 rounded-lg">
               <p className="font-mono text-sm text-accent">
-                You ranked <span className="font-bold">#{globalRank}</span> globally today
+                You ranked <span className="font-bold">#{globalRank}</span>{" "}
+                globally today
               </p>
             </div>
           </motion.div>
@@ -152,8 +204,12 @@ const FinalResults = () => {
                   >
                     <div className="text-accent">{achievement.icon}</div>
                     <div>
-                      <p className="font-mono text-sm font-bold text-foreground">{achievement.name}</p>
-                      <p className="font-mono text-xs text-muted-foreground">{achievement.description}</p>
+                      <p className="font-mono text-sm font-bold text-foreground">
+                        {achievement.name}
+                      </p>
+                      <p className="font-mono text-xs text-muted-foreground">
+                        {achievement.description}
+                      </p>
                     </div>
                   </motion.div>
                 ))}
@@ -169,7 +225,7 @@ const FinalResults = () => {
             className="flex gap-4"
           >
             <GlowButton
-              onClick={() => navigate("/select-role")}
+              onClick={handlePlayAgain}
               variant="primary"
               size="lg"
               icon={<RotateCcw className="w-4 h-4" />}

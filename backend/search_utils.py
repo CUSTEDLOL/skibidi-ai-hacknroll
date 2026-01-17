@@ -175,6 +175,51 @@ def validate_query_logic(query, forbidden_words):
     }
 
 
+def verify_guess_with_gemini(guess, topic):
+    """
+    Verify if a guess matches the secret topic using Gemini for semantic similarity.
+    Returns: { "is_correct": bool, "similarity_score": float, "reason": str }
+    """
+    if not GEMINI_AVAILABLE:
+        # Fallback to simple string matching
+        is_correct = guess.lower() == topic.lower() or topic.lower() in guess.lower()
+        return {
+            "is_correct": is_correct,
+            "similarity_score": 1.0 if is_correct else 0.0,
+            "reason": "Exact match (Gemini unavailable)"
+        }
+
+    prompt = f"""
+    Compare the guess "{guess}" with the secret topic "{topic}".
+    Is the guess semantically close enough to count as a correct answer?
+    Allow for synonyms, close variations, or specific parts if the topic is broad.
+    
+    Return JSON: {{ "is_correct": boolean, "similarity_score": float (0.0-1.0), "reason": "brief explanation" }}
+    """
+
+    try:
+        response = gemini_client.models.generate_content(
+            model='gemini-1.5-flash',
+            content=prompt,
+            config={'response_mime_type': 'application/json'}
+        )
+
+        content_text = response.text if hasattr(
+            response, 'text') else response.candidates[0].content.parts[0].text
+
+        result = json.loads(content_text)
+        return result
+    except Exception as e:
+        app.logger.error(f"Gemini verification error: {e}")
+        # Fallback
+        is_correct = guess.lower() == topic.lower() or topic.lower() in guess.lower()
+        return {
+            "is_correct": is_correct,
+            "similarity_score": 1.0 if is_correct else 0.0,
+            "reason": "Fallback check due to error"
+        }
+
+
 def get_random_topic_data():
     """Static list of topics for the game."""
     topics = [

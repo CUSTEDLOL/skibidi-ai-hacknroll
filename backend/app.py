@@ -18,6 +18,7 @@ from search_utils import (
     redact_with_gemini,
     simple_redaction,
     validate_query_logic,
+    verify_guess_with_gemini,
     get_random_topic_data,
     GOOGLE_API_KEY,
     GEMINI_API_KEY,
@@ -260,6 +261,10 @@ def on_lobby_join(data):
     # Send current state to just this socket
     emit("lobby:state", {"lobby": lobbies[lobby_id]})
 
+    # Send chat history
+    emit("chat:history", {
+         "messages": lobbies[lobby_id].get('chatHistory', [])})
+
     # Broadcast updated state to everyone in the lobby
     emit_lobby_state(lobby_id)
 
@@ -338,6 +343,46 @@ def handle_ping(data):
     app.logger.debug(f"[SocketIO] Received ping from frontend: {data}")
     emit("pong", {"msg": "pong from backend", "time": data.get("time")})
     emit("debug", "Ping event received and pong sent.")
+
+
+@socketio.on("chat:message")
+def handle_chat_message(data):
+    """Handle chat messages and persist them"""
+    lobby_id = data.get("lobbyId")
+    message = data.get("message")
+    player_id = data.get("playerId")
+
+    if not all([lobby_id, message, player_id]) or lobby_id not in lobbies:
+        return
+
+    lobby = lobbies[lobby_id]
+
+    # Create message object
+    chat_msg = {
+        "id": str(uuid.uuid4()),
+        "playerId": player_id,
+        "message": message,
+        "timestamp": datetime.now().isoformat()
+    }
+
+    # Store in history
+    if 'chatHistory' not in lobby:
+        lobby['chatHistory'] = []
+    lobby['chatHistory'].append(chat_msg)
+
+    # Broadcast to lobby
+    socketio.emit("chat:message", chat_msg, room=lobby_id)
+
+
+@socketio.on("emote:send")
+def handle_emote(data):
+    """Handle emotes/reactions"""
+    lobby_id = data.get("lobbyId")
+    if not lobby_id or lobby_id not in lobbies:
+        return
+
+    # Broadcast emote to lobby (no persistence needed for emotes usually)
+    socketio.emit("emote:receive", data, room=lobby_id)
 
 
 # ============ Game WebSocket Handlers ============
@@ -527,7 +572,8 @@ def create_lobby():
         'status': 'waiting',  # waiting, in_game, finished
         'gameConfig': None,
         'gameId': None,
-        'roundState': None  # Will be initialized when round starts
+        'roundState': None,  # Will be initialized when round starts
+        'chatHistory': []    # Store chat messages
     }
     lobbies[lobby_id] = lobby
     lobby_code_map[lobby_code] = lobby_id
@@ -569,6 +615,7 @@ def join_lobby(lobby_code):
         'playerId': user_id,
         'playerName': player_name,
         'role': None,
+        'score': 0,
         'isConnected': False  # Will be set to True when they connect via WebSocket
     })
 
@@ -624,6 +671,7 @@ def join_random_public_lobby():
             'playerId': user_id,
             'playerName': player_name,
             'role': None,
+            'score': 0,
             'isConnected': True  # Host is immediately considered connected in quick join flow
         })
 
@@ -654,6 +702,7 @@ def join_random_public_lobby():
         'playerId': user_id,
         'playerName': player_name,
         'role': None,
+        'score': 0,
         'isConnected': False  # Will be set to True when they connect via WebSocket
     })
 
@@ -830,6 +879,11 @@ def select_topic():
     # Redact results for guessers
     redacted_results = redact_with_gemini(
         initial_results, forbidden_words, initial_query, topic)
+
+    # Reset player round status
+    for p in lobby['players']:
+        p['hasGuessedCorrectly'] = False
+        p['guessCount'] = 0
 
     # Initialize round state
     current_time = time.time()
@@ -1009,6 +1063,126 @@ def get_round_state(lobby_id):
         'roundState': round_state,
         'timeRemaining': time_remaining,
         'cooldownRemaining': cooldown_remaining
+    }), 200
+
+
+@app.route('/api/round/guess', methods=['POST'])
+def make_guess():
+    """
+    Guesser makes a guess
+    Request: { "lobbyId": str, "userId": str, "guess": str }
+    Response: { "correct": bool, "score": int, "message": str }
+    """
+    data = request.json
+    lobby_id = data.get('lobbyId')
+    user_id = data.get('userId')
+    guess = data.get('guess', '').strip()
+
+    if not all([lobby_id, user_id, guess]):
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    if lobby_id not in lobbies:
+        return jsonify({'error': 'Lobby not found'}), 404
+
+    lobby = lobbies[lobby_id]
+    round_state = lobby.get('roundState')
+
+    if not round_state or not round_state.get('isActive'):
+        return jsonify({'error': 'No active round'}), 400
+
+    # Find player
+    player = next((p for p in lobby['players']
+                  if p['playerId'] == user_id), None)
+    if not player:
+        return jsonify({'error': 'Player not found'}), 404
+
+    if player['role'] != 'guesser':
+        return jsonify({'error': 'Only guessers can guess'}), 403
+
+    player['guessCount'] = player.get('guessCount', 0) + 1
+
+    # Check guess (case-insensitive or semantic)
+    topic = round_state['topic']
+
+    verification = verify_guess_with_gemini(guess, topic)
+    is_correct = verification['is_correct']
+    similarity_score = verification.get('similarity_score', 0.0)
+
+    if is_correct:
+        player['hasGuessedCorrectly'] = True
+
+        # Calculate score
+        # Base: 100
+        # Speed: +1 per second remaining
+        # Efficiency: -10 per extra guess (max penalty 50)
+        # First Try: +100
+
+        time_remaining = get_current_round_time_remaining(round_state)
+        guess_count = player['guessCount']
+
+        base_score = 100
+        speed_bonus = max(0, time_remaining)
+        efficiency_penalty = min(50, (guess_count - 1) * 10)
+        first_try_bonus = 100 if guess_count == 1 else 0
+        # Up to 50 bonus points for semantic match
+        similarity_bonus = int(similarity_score * 50)
+
+        round_score = base_score + speed_bonus - \
+            efficiency_penalty + first_try_bonus + similarity_bonus
+        player['score'] += round_score
+
+        # Award points to searcher for speed (collaboration bonus)
+        searcher = next(
+            (p for p in lobby['players'] if p['role'] == 'searcher'), None)
+        if searcher:
+            searcher_bonus = max(0, int(time_remaining / 2))
+            searcher['score'] += searcher_bonus
+            # Notify searcher? Maybe via general score update
+
+        # Emit success event to this player
+        player_sid = user_socket_map.get(user_id)
+        if player_sid:
+            socketio.emit('round:guess_result', {
+                'correct': True,
+                'score': round_score,
+                'totalScore': player['score'],
+                'breakdown': {
+                    'base': base_score,
+                    'speed': speed_bonus,
+                    'efficiency': -efficiency_penalty,
+                    'firstTry': first_try_bonus
+                }
+            }, room=player_sid)
+
+        # Broadcast score update to everyone
+        emit_lobby_state(lobby_id)
+
+        # Check if all guessers are correct
+        all_guessers = [p for p in lobby['players'] if p['role'] == 'guesser']
+        all_correct = all(p.get('hasGuessedCorrectly', False)
+                          for p in all_guessers)
+
+        if all_correct:
+            round_state['isActive'] = False
+            socketio.emit('round:ended', {
+                'reason': 'success',
+                'roundNumber': round_state.get('roundNumber', 1),
+                'message': 'All agents have identified the target!'
+            }, room=lobby_id)
+            print(f"[Round] Round ended (success) for lobby {lobby_id}")
+
+    else:
+        # Emit failure event
+        player_sid = user_socket_map.get(user_id)
+        if player_sid:
+            socketio.emit('round:guess_result', {
+                'correct': False,
+                'message': 'Incorrect hypothesis'
+            }, room=player_sid)
+
+    return jsonify({
+        'correct': is_correct,
+        'attempts': player['guessCount']
     }), 200
 
 

@@ -18,6 +18,8 @@ import {
   MapPin,
   MessageSquare,
   HelpCircle,
+  CheckCircle,
+  Loader2,
 } from "lucide-react";
 import { GlowButton } from "@/components/ui/GlowButton";
 import { toast } from "sonner";
@@ -26,6 +28,7 @@ import {
   getOrCreatePlayerName,
   type Player,
 } from "@/lib/playerUtils";
+import { makeGuess, getLobby } from "@/lib/api";
 import { socket } from "@/socket";
 
 interface ExtractedClue {
@@ -68,40 +71,33 @@ const GuesserActive = () => {
 
   const lobbyId = getLobbyId();
 
-  const [players, setPlayers] = useState<Player[]>([
-    {
-      id: "p1",
-      username: "Agent 007",
-      score: 0,
-      isHost: true,
-      role: "searcher",
-      isReady: true,
-    },
-    {
-      id: playerId,
-      username: playerName,
-      score: 0,
-      isHost: false,
-      role: "guesser",
-      isReady: true,
-    },
-    {
-      id: "p3",
-      username: "Neon Shadow",
-      score: 0,
-      isHost: false,
-      role: "guesser",
-      isReady: true,
-    },
-  ]);
+  const [players, setPlayers] = useState<Player[]>([]);
+
+  useEffect(() => {
+    if (lobbyId) {
+      getLobby(lobbyId).then((data) => {
+        if (data.lobby) {
+          const lobbyPlayers = data.lobby.players.map((p: any) => ({
+            id: p.playerId,
+            username: p.playerName,
+            score: p.score || 0,
+            isHost: data.lobby.players[0].playerId === p.playerId,
+            role: p.role || "guesser",
+            isReady: true,
+          }));
+          setPlayers(lobbyPlayers);
+        }
+      });
+    }
+  }, [lobbyId]);
 
   // Get game state from location state or use defaults
   const round = (location.state as any)?.round || 1;
   const totalRounds = (location.state as any)?.totalRounds || 5;
   const timeLimit = (location.state as any)?.timeLimit || 120;
-  const maxAttempts = (location.state as any)?.maxAttempts || 5;
+  // const maxAttempts = (location.state as any)?.maxAttempts || 5; // Unlimited attempts
 
-  const attemptsRemaining = maxAttempts - guessHistory.length;
+  // const attemptsRemaining = maxAttempts - guessHistory.length; // Unlimited
 
   // Listen for round start and redacted results
   useEffect(() => {
@@ -209,11 +205,6 @@ const GuesserActive = () => {
   }
 
   const handleGuess = async (guess: string) => {
-    if (attemptsRemaining <= 0) {
-      toast.error("No attempts remaining");
-      return;
-    }
-
     if (guessHistory.includes(guess)) {
       toast.error("You've already tried that guess");
       return;
@@ -318,9 +309,8 @@ const GuesserActive = () => {
               ROUND <span className="text-primary">{round}</span>/{totalRounds}
             </div>
             <div className="font-mono text-sm text-muted-foreground">
-              ATTEMPTS:{" "}
-              <span className="text-primary">{attemptsRemaining}</span>/
-              {maxAttempts}
+              GUESSES:{" "}
+              <span className="text-primary">{guessHistory.length}</span>
             </div>
           </div>
           <Timer
@@ -385,7 +375,7 @@ const GuesserActive = () => {
               <TerminalInput
                 onSubmit={handleGuess}
                 placeholder="Enter your hypothesis..."
-                disabled={attemptsRemaining <= 0 || isSubmitting}
+                disabled={isSubmitting}
                 type="guess"
               />
 

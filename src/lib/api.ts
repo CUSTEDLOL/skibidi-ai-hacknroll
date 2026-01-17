@@ -354,6 +354,19 @@ export interface RoundStateResponse {
   cooldownRemaining: number;
 }
 
+export interface MakeGuessRequest {
+  lobbyId: string;
+  userId: string;
+  guess: string;
+}
+
+export interface MakeGuessResponse {
+  correct: boolean;
+  attempts: number;
+  message?: string;
+  score?: number;
+}
+
 export async function selectTopic(
   data: SelectTopicRequest,
 ): Promise<SelectTopicResponse> {
@@ -399,6 +412,23 @@ export async function getRoundState(
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error?.error || "Failed to get round state");
+  }
+
+  return response.json();
+}
+
+export async function makeGuess(
+  data: MakeGuessRequest,
+): Promise<MakeGuessResponse> {
+  const response = await fetch(`${API_BASE}/api/round/guess`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error?.error || "Failed to make guess");
   }
 
   return response.json();

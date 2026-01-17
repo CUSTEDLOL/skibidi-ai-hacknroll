@@ -20,6 +20,7 @@ import {
   search,
   validateQuery,
   getRandomTopic,
+  getLobby,
   type SearchResponse,
 } from "@/lib/api";
 import { toast } from "sonner";
@@ -85,32 +86,25 @@ const SearcherActive = () => {
 
   const lobbyId = getLobbyId();
 
-  const [players, setPlayers] = useState<Player[]>([
-    {
-      id: playerId,
-      username: playerName,
-      score: 0,
-      isHost: true,
-      role: "searcher",
-      isReady: true,
-    },
-    {
-      id: "p2",
-      username: "Agent Cipher",
-      score: 0,
-      isHost: false,
-      role: "guesser",
-      isReady: true,
-    },
-    {
-      id: "p3",
-      username: "Neon Shadow",
-      score: 0,
-      isHost: false,
-      role: "guesser",
-      isReady: true,
-    },
-  ]);
+  const [players, setPlayers] = useState<Player[]>([]);
+
+  useEffect(() => {
+    if (lobbyId) {
+      getLobby(lobbyId).then((data) => {
+        if (data.lobby) {
+          const lobbyPlayers = data.lobby.players.map((p: any) => ({
+            id: p.playerId,
+            username: p.playerName,
+            score: p.score || 0,
+            isHost: data.lobby.players[0].playerId === p.playerId,
+            role: p.role || "guesser",
+            isReady: true,
+          }));
+          setPlayers(lobbyPlayers);
+        }
+      });
+    }
+  }, [lobbyId]);
 
   // Get game state from location state or use defaults
   const secretTopic = (location.state as any)?.secretTopic || "Moon Landing";
@@ -137,6 +131,30 @@ const SearcherActive = () => {
       toast.error("Missing lobby information. Please restart the game.");
       navigate("/");
     }
+  }, [lobbyId, navigate]);
+
+  // Listen for round end (sync with guessers)
+  useEffect(() => {
+    const handleRoundEnded = (data: {
+      reason: string;
+      roundNumber: number;
+      message?: string;
+    }) => {
+      toast.success(data.message || "Round Ended");
+      navigate("/game/round-result", {
+        state: {
+          round: data.roundNumber,
+          lobbyId,
+          reason: data.reason,
+        },
+      });
+    };
+
+    socket.on("round:ended", handleRoundEnded);
+
+    return () => {
+      socket.off("round:ended", handleRoundEnded);
+    };
   }, [lobbyId, navigate]);
 
   // WebSocket event listeners
@@ -208,6 +226,30 @@ const SearcherActive = () => {
       socket.off("error", handleError);
     };
   }, [searchHistory.length]);
+
+  // Listen for round end (sync with guessers)
+  useEffect(() => {
+    const handleRoundEnded = (data: {
+      reason: string;
+      roundNumber: number;
+      message?: string;
+    }) => {
+      toast.success(data.message || "Round Ended");
+      navigate("/game/round-result", {
+        state: {
+          round: data.roundNumber,
+          lobbyId,
+          reason: data.reason,
+        },
+      });
+    };
+
+    socket.on("round:ended", handleRoundEnded);
+
+    return () => {
+      socket.off("round:ended", handleRoundEnded);
+    };
+  }, [lobbyId, navigate]);
 
   useEffect(() => {
     // If we have initial search results passed from topic selection, perform a "silent" search
@@ -287,27 +329,8 @@ const SearcherActive = () => {
   };
 
   const handleTimeUp = () => {
-    // Auto-submit the last search if available
-    let lastQuery = "Time Expired";
-    let lastResults: SearchResultData[] = [];
-
-    if (searchHistory.length > 0) {
-      const last = searchHistory[searchHistory.length - 1];
-      lastQuery = last.query;
-      lastResults = last.results;
-    } else if (initialSearchResults) {
-      // use initial
-      lastQuery = "Initial Intelligence";
-    }
-
-    navigate("/game/round-result", {
-      state: {
-        selectedQuery: lastQuery,
-        selectedResults: lastResults,
-        secretTopic,
-        round,
-      },
-    });
+    // Time is up, wait for backend event
+    // Backend timer will trigger round:ended
   };
 
   return (
