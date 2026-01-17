@@ -7,49 +7,42 @@ import { SearchResult } from "../ui/SearchResult";
 import { GlowButton } from "../ui/GlowButton";
 import { ClassifiedStamp } from "../ui/ClassifiedStamp";
 
+export interface RedactedResult {
+  source: string;
+  title: string;
+  snippet: string;
+  confidence?: number;
+}
+
+export interface ExtractedClue {
+  type: string;
+  value: string;
+}
+
 interface GuesserScreenProps {
   round: number;
   totalRounds: number;
   guessesRemaining: number;
+  redactedResults?: RedactedResult[];
+  extractedClues?: ExtractedClue[];
   onGuess?: (guess: string) => void;
   onRequestHint?: () => void;
   timeLimit?: number;
 }
 
-// Mock redacted results
-const mockRedactedResults = [
-  {
-    source: "wikipedia.org",
-    title: "The historic ████████ that changed ███████ forever",
-    snippet: "On July ████, the ██████ achieved what many thought impossible. The crew successfully completed their ████████, marking a pivotal moment in history.",
-    confidence: 0.85,
-  },
-  {
-    source: "history.com",
-    title: "One small ████: The journey to another █████",
-    snippet: "The famous words spoken during the ██████ have echoed through ███████████. This achievement represented the culmination of years of ██████████ advancement.",
-    confidence: 0.72,
-  },
-  {
-    source: "██████.gov",
-    title: "Mission ████████ and historical documentation",
-    snippet: "Official ██████ and photographs from the historic ██████████. The ██████████ used was groundbreaking for its era and pushed the boundaries of ███████████.",
-    confidence: 0.68,
-  },
-];
-
-// Mock extracted clues
-const mockClues = [
-  { type: "date", icon: Calendar, value: "July 20th" },
-  { type: "person", icon: User, value: "Crew" },
-  { type: "location", icon: MapPin, value: "Another world" },
-  { type: "number", icon: Hash, value: "1969" },
-];
+const clueIcons: Record<string, typeof Calendar> = {
+  date: Calendar,
+  person: User,
+  location: MapPin,
+  number: Hash,
+};
 
 export function GuesserScreen({
-  round = 2,
-  totalRounds = 5,
-  guessesRemaining = 5,
+  round,
+  totalRounds,
+  guessesRemaining,
+  redactedResults = [],
+  extractedClues = [],
   onGuess,
   onRequestHint,
   timeLimit = 120,
@@ -60,20 +53,14 @@ export function GuesserScreen({
 
   const handleGuess = async (guess: string) => {
     setIsSubmitting(true);
-    
-    // Simulate submission delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // For demo, mark as incorrect
-    const isCorrect = guess.toLowerCase() === "moon landing";
-    
-    setGuessHistory(prev => [...prev, { guess, correct: isCorrect }]);
-    
-    if (!isCorrect) {
-      setShowWrongAnimation(true);
-      setTimeout(() => setShowWrongAnimation(false), 500);
-    }
-    
+
+    // Add to history (correctness will be determined by parent component)
+    setGuessHistory(prev => [...prev, { guess, correct: false }]);
+
+    // Show wrong animation temporarily
+    setShowWrongAnimation(true);
+    setTimeout(() => setShowWrongAnimation(false), 500);
+
     setIsSubmitting(false);
     onGuess?.(guess);
   };
@@ -122,20 +109,32 @@ export function GuesserScreen({
                 <span className="font-mono text-lg font-bold text-foreground">CLASSIFIED INTEL</span>
               </div>
               <span className="font-mono text-sm text-muted-foreground">
-                {mockRedactedResults.length} documents recovered
+                {redactedResults.length} documents recovered
               </span>
             </motion.div>
 
             {/* Redacted Results */}
             <div className="space-y-4">
-              {mockRedactedResults.map((result, i) => (
-                <SearchResult
-                  key={i}
-                  {...result}
-                  isRedacted={true}
-                  delay={i * 0.2}
-                />
-              ))}
+              {redactedResults.length > 0 ? (
+                redactedResults.map((result, i) => (
+                  <SearchResult
+                    key={i}
+                    {...result}
+                    isRedacted={true}
+                    delay={i * 0.2}
+                  />
+                ))
+              ) : (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-center py-8 bg-card border border-border rounded-lg"
+                >
+                  <p className="font-mono text-muted-foreground">
+                    Waiting for intel from the searcher...
+                  </p>
+                </motion.div>
+              )}
             </div>
 
             {/* Guess Input */}
@@ -198,22 +197,31 @@ export function GuesserScreen({
                 <Sparkles className="w-4 h-4 text-primary" />
                 <span className="font-mono text-sm text-primary font-bold">EXTRACTED INTEL</span>
               </div>
-              <ul className="space-y-3">
-                {mockClues.map((clue, i) => (
-                  <motion.li
-                    key={i}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.5 + i * 0.1 }}
-                    className="flex items-center gap-3"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                      <clue.icon className="w-4 h-4 text-primary" />
-                    </div>
-                    <span className="font-mono text-sm text-foreground">{clue.value}</span>
-                  </motion.li>
-                ))}
-              </ul>
+              {extractedClues.length > 0 ? (
+                <ul className="space-y-3">
+                  {extractedClues.map((clue, i) => {
+                    const IconComponent = clueIcons[clue.type] || Hash;
+                    return (
+                      <motion.li
+                        key={i}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.5 + i * 0.1 }}
+                        className="flex items-center gap-3"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                          <IconComponent className="w-4 h-4 text-primary" />
+                        </div>
+                        <span className="font-mono text-sm text-foreground">{clue.value}</span>
+                      </motion.li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="font-mono text-xs text-muted-foreground italic">
+                  No intel extracted yet
+                </p>
+              )}
             </motion.div>
 
             {/* Request Hint */}

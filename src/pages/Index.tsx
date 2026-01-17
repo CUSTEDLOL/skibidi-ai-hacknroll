@@ -56,7 +56,7 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen scanlines crt-flicker">
+    <div className="min-h-screen scanlines">
       <Background />
       <Header />
       

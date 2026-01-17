@@ -49,8 +49,8 @@ export function Background() {
         ))}
       </div>
 
-      {/* Scanlines overlay */}
-      <div className="absolute inset-0 pointer-events-none scanlines opacity-50" />
+      {/* Scanlines overlay - Subtle */}
+      <div className="absolute inset-0 pointer-events-none scanlines opacity-[0.1]" />
       
       {/* Noise texture */}
       <div className="absolute inset-0 pointer-events-none noise-overlay opacity-[0.02]" />

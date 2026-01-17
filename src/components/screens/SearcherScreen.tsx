@@ -3,9 +3,16 @@ import { useState } from "react";
 import { AlertTriangle, X, History, Lightbulb, Send } from "lucide-react";
 import { Timer } from "../ui/Timer";
 import { TerminalInput } from "../ui/TerminalInput";
-import { SearchResult, SearchResultSkeleton } from "../ui/SearchResult";
+import { SearchResult as SearchResultCard, SearchResultSkeleton } from "../ui/SearchResult";
 import { GlowButton } from "../ui/GlowButton";
 import { ClassifiedStamp } from "../ui/ClassifiedStamp";
+
+export interface SearchResultData {
+  source: string;
+  title: string;
+  snippet: string;
+  confidence?: number;
+}
 
 interface SearcherScreenProps {
   secretTopic: string;
@@ -13,45 +20,23 @@ interface SearcherScreenProps {
   round: number;
   totalRounds: number;
   searchesRemaining: number;
-  onSearch?: (query: string) => void;
+  onSearch?: (query: string) => Promise<SearchResultData[]>;
   onSubmit?: () => void;
   timeLimit?: number;
 }
 
-// Mock search results
-const mockResults = [
-  {
-    source: "wikipedia.org",
-    title: "The historic landing that changed humanity forever",
-    snippet: "On July 20th, the mission achieved what many thought impossible. The crew successfully completed their objective, marking a pivotal moment in history.",
-    confidence: 0.85,
-  },
-  {
-    source: "history.com",
-    title: "One small step: The journey to another world",
-    snippet: "The famous words spoken during the mission have echoed through generations. This achievement represented the culmination of years of scientific advancement.",
-    confidence: 0.72,
-  },
-  {
-    source: "nasa.gov",
-    title: "Mission archives and historical documentation",
-    snippet: "Official records and photographs from the historic expedition. The technology used was groundbreaking for its era and pushed the boundaries of exploration.",
-    confidence: 0.68,
-  },
-];
-
 export function SearcherScreen({
-  secretTopic = "Moon Landing",
-  forbiddenWords = ["moon", "apollo", "armstrong", "nasa", "space"],
-  round = 2,
-  totalRounds = 5,
-  searchesRemaining = 3,
+  secretTopic,
+  forbiddenWords,
+  round,
+  totalRounds,
+  searchesRemaining,
   onSearch,
   onSubmit,
   timeLimit = 120,
 }: SearcherScreenProps) {
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
-  const [results, setResults] = useState<typeof mockResults>([]);
+  const [results, setResults] = useState<SearchResultData[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
 
@@ -59,14 +44,19 @@ export function SearcherScreen({
     setIsSearching(true);
     setShowResults(false);
     setSearchHistory(prev => [...prev, query]);
-    
-    // Simulate search delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    setResults(mockResults);
+
+    try {
+      if (onSearch) {
+        const searchResults = await onSearch(query);
+        setResults(searchResults);
+      }
+    } catch (error) {
+      console.error("Search failed:", error);
+      setResults([]);
+    }
+
     setIsSearching(false);
     setShowResults(true);
-    onSearch?.(query);
   };
 
   return (
@@ -171,33 +161,47 @@ export function SearcherScreen({
 
               {showResults && (
                 <>
-                  <p className="font-mono text-sm text-muted-foreground">
-                    DECLASSIFIED RESULTS ({results.length})
-                  </p>
-                  {results.map((result, i) => (
-                    <SearchResult
-                      key={i}
-                      {...result}
-                      isRedacted={false}
-                      delay={i * 0.2}
-                    />
-                  ))}
-                  
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.8 }}
-                    className="flex justify-center pt-4"
-                  >
-                    <GlowButton
-                      onClick={onSubmit}
-                      variant="primary"
-                      size="lg"
-                      icon={<Send className="w-5 h-5" />}
+                  {results.length > 0 ? (
+                    <>
+                      <p className="font-mono text-sm text-muted-foreground">
+                        DECLASSIFIED RESULTS ({results.length})
+                      </p>
+                      {results.map((result, i) => (
+                        <SearchResultCard
+                          key={i}
+                          {...result}
+                          isRedacted={false}
+                          delay={i * 0.2}
+                        />
+                      ))}
+
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.8 }}
+                        className="flex justify-center pt-4"
+                      >
+                        <GlowButton
+                          onClick={onSubmit}
+                          variant="primary"
+                          size="lg"
+                          icon={<Send className="w-5 h-5" />}
+                        >
+                          Send to Guesser
+                        </GlowButton>
+                      </motion.div>
+                    </>
+                  ) : (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="text-center py-8 bg-card border border-border rounded-lg"
                     >
-                      Send to Guesser
-                    </GlowButton>
-                  </motion.div>
+                      <p className="font-mono text-muted-foreground">
+                        No results found. Try a different search query.
+                      </p>
+                    </motion.div>
+                  )}
                 </>
               )}
             </div>

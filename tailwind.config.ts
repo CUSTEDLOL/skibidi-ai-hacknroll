@@ -110,10 +110,7 @@ export default {
           "0%, 100%": { transform: "translateY(0px)" },
           "50%": { transform: "translateY(-10px)" },
         },
-        "blink": {
-          "0%, 100%": { opacity: "1" },
-          "50%": { opacity: "0" },
-        },
+        /* Blink animation disabled for cleaner UI */
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -125,7 +122,6 @@ export default {
         "spin-slow": "spin-slow 20s linear infinite",
         "pulse-border": "pulse-border 2s ease-in-out infinite",
         "float": "float 3s ease-in-out infinite",
-        "blink": "blink 1s step-end infinite",
       },
       backgroundImage: {
         'grid-pattern': 'linear-gradient(to right, hsl(180 20% 20% / 0.1) 1px, transparent 1px), linear-gradient(to bottom, hsl(180 20% 20% / 0.1) 1px, transparent 1px)',

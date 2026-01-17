@@ -6,7 +6,6 @@ interface GlowButtonProps {
   onClick?: () => void;
   variant?: "primary" | "secondary" | "danger" | "amber";
   size?: "sm" | "md" | "lg";
-  pulse?: boolean;
   disabled?: boolean;
   className?: string;
   icon?: ReactNode;
@@ -17,7 +16,6 @@ export function GlowButton({
   onClick,
   variant = "primary",
   size = "md",
-  pulse = false,
   disabled = false,
   className = "",
   icon,
@@ -39,15 +37,15 @@ export function GlowButton({
     <motion.button
       onClick={onClick}
       disabled={disabled}
-      whileHover={{ scale: disabled ? 1 : 1.02 }}
-      whileTap={{ scale: disabled ? 1 : 0.98 }}
+      whileHover={{ scale: disabled ? 1 : 1.02, filter: "brightness(1.1)" }}
+      whileTap={{ scale: disabled ? 1 : 0.95 }}
+      transition={{ duration: 0.2 }}
       className={`
         font-mono font-semibold uppercase tracking-wider rounded-md
-        transition-all duration-300 flex items-center justify-center gap-2
+        transition-all duration-200 flex items-center justify-center gap-2
         disabled:opacity-50 disabled:cursor-not-allowed
         ${variants[variant]}
         ${sizes[size]}
-        ${pulse ? "pulse-glow" : ""}
         ${className}
       `}
     >

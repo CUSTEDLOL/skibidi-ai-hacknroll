@@ -13,10 +13,11 @@ interface Score {
 interface RoundResultProps {
   success: boolean;
   secretTopic: string;
-  scores: Score;
-  timeUsed: number;
-  totalTime: number;
-  guessAttempts: number;
+  scores?: Score;
+  timeUsed?: number;
+  totalTime?: number;
+  guessAttempts?: number;
+  rank?: number;
   onContinue?: () => void;
   onRematch?: () => void;
 }
@@ -28,12 +29,14 @@ export function RoundResult({
   timeUsed,
   totalTime,
   guessAttempts,
+  rank,
   onContinue,
   onRematch,
 }: RoundResultProps) {
   const [showScores, setShowScores] = useState(false);
   const [animatedTotal, setAnimatedTotal] = useState(0);
-  const totalScore = scores.base + scores.speedBonus + scores.efficiency + scores.firstTry;
+  const totalScore = scores ? scores.base + scores.speedBonus + scores.efficiency + scores.firstTry : 0;
+  const hasScores = scores !== undefined;
 
   useEffect(() => {
     const timer = setTimeout(() => setShowScores(true), 1500);
@@ -106,7 +109,7 @@ export function RoundResult({
 
       {/* Score Breakdown */}
       <AnimatePresence>
-        {showScores && (
+        {showScores && hasScores && scores && (
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
@@ -163,27 +166,33 @@ export function RoundResult({
 
       {/* Performance Stats */}
       <AnimatePresence>
-        {showScores && (
+        {showScores && (timeUsed !== undefined || guessAttempts !== undefined || rank !== undefined) && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.8 }}
             className="flex gap-8 text-center"
           >
-            <div>
-              <p className="font-mono text-xs text-muted-foreground">TIME USED</p>
-              <p className="font-mono text-xl font-bold text-foreground">
-                {Math.floor(timeUsed / 60)}:{(timeUsed % 60).toString().padStart(2, '0')}
-              </p>
-            </div>
-            <div>
-              <p className="font-mono text-xs text-muted-foreground">GUESSES</p>
-              <p className="font-mono text-xl font-bold text-foreground">{guessAttempts}</p>
-            </div>
-            <div>
-              <p className="font-mono text-xs text-muted-foreground">RANK TODAY</p>
-              <p className="font-mono text-xl font-bold text-accent">#47</p>
-            </div>
+            {timeUsed !== undefined && (
+              <div>
+                <p className="font-mono text-xs text-muted-foreground">TIME USED</p>
+                <p className="font-mono text-xl font-bold text-foreground">
+                  {Math.floor(timeUsed / 60)}:{(timeUsed % 60).toString().padStart(2, '0')}
+                </p>
+              </div>
+            )}
+            {guessAttempts !== undefined && (
+              <div>
+                <p className="font-mono text-xs text-muted-foreground">GUESSES</p>
+                <p className="font-mono text-xl font-bold text-foreground">{guessAttempts}</p>
+              </div>
+            )}
+            {rank !== undefined && (
+              <div>
+                <p className="font-mono text-xs text-muted-foreground">RANK TODAY</p>
+                <p className="font-mono text-xl font-bold text-accent">#{rank}</p>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -197,7 +206,7 @@ export function RoundResult({
             transition={{ delay: 1 }}
             className="flex flex-wrap gap-4 justify-center mt-4"
           >
-            <GlowButton onClick={onContinue} variant="primary" pulse icon={<Trophy className="w-4 h-4" />}>
+            <GlowButton onClick={onContinue} variant="primary" icon={<Trophy className="w-4 h-4" />}>
               Continue Mission
             </GlowButton>
             <GlowButton onClick={onRematch} variant="secondary" icon={<RotateCcw className="w-4 h-4" />}>
