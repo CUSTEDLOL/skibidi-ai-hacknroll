@@ -24,45 +24,56 @@ export function useAudio() {
   return useContext(AudioContextReact);
 }
 
-// Create atmospheric spy-themed ambient sound
+// Atmospheric spy-themed ambient drone
 function createAmbientSound(audioContext: AudioContext, gainNode: GainNode) {
-  const createPad = (freq: number, gain: number, detune: number = 0) => {
+  // Deep pad oscillators for mysterious atmosphere
+  const oscillators: OscillatorNode[] = [];
+  const gains: GainNode[] = [];
+  
+  const frequencies = [55, 110, 165]; // A1, A2, E3 - dark minor feel
+  const volumes = [0.03, 0.02, 0.01];
+  
+  frequencies.forEach((freq, i) => {
     const osc = audioContext.createOscillator();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(freq, audioContext.currentTime);
-    osc.detune.setValueAtTime(detune, audioContext.currentTime);
+    
+    // Slight detune for richness
+    if (i > 0) {
+      osc.detune.setValueAtTime(i * 3, audioContext.currentTime);
+    }
     
     const oscGain = audioContext.createGain();
-    oscGain.gain.setValueAtTime(gain, audioContext.currentTime);
+    oscGain.gain.setValueAtTime(volumes[i], audioContext.currentTime);
     
+    // Low-pass filter for warmth
     const filter = audioContext.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(800, audioContext.currentTime);
+    filter.frequency.setValueAtTime(600, audioContext.currentTime);
     filter.Q.setValueAtTime(0.5, audioContext.currentTime);
     
     osc.connect(filter);
     filter.connect(oscGain);
     oscGain.connect(gainNode);
     
-    return { osc, oscGain };
-  };
-
-  const pads = [
-    createPad(65.41, 0.04, 0),
-    createPad(130.81, 0.025, 3),
-    createPad(196.00, 0.015, -2),
-  ];
-
+    oscillators.push(osc);
+    gains.push(oscGain);
+  });
+  
+  // Slow LFO for gentle movement
   const lfo = audioContext.createOscillator();
   lfo.type = 'sine';
-  lfo.frequency.setValueAtTime(0.05, audioContext.currentTime);
+  lfo.frequency.setValueAtTime(0.03, audioContext.currentTime);
   
   const lfoGain = audioContext.createGain();
-  lfoGain.gain.setValueAtTime(3, audioContext.currentTime);
+  lfoGain.gain.setValueAtTime(2, audioContext.currentTime);
   
   lfo.connect(lfoGain);
-  lfoGain.connect(pads[0].osc.frequency);
-
+  if (oscillators[0]) {
+    lfoGain.connect(oscillators[0].frequency);
+  }
+  
+  // Very subtle filtered noise for texture
   const bufferSize = audioContext.sampleRate * 2;
   const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
   const output = noiseBuffer.getChannelData(0);
@@ -76,100 +87,71 @@ function createAmbientSound(audioContext: AudioContext, gainNode: GainNode) {
   
   const noiseFilter = audioContext.createBiquadFilter();
   noiseFilter.type = 'bandpass';
-  noiseFilter.frequency.setValueAtTime(150, audioContext.currentTime);
-  noiseFilter.Q.setValueAtTime(0.3, audioContext.currentTime);
+  noiseFilter.frequency.setValueAtTime(100, audioContext.currentTime);
+  noiseFilter.Q.setValueAtTime(0.2, audioContext.currentTime);
   
   const noiseGain = audioContext.createGain();
-  noiseGain.gain.setValueAtTime(0.008, audioContext.currentTime);
+  noiseGain.gain.setValueAtTime(0.005, audioContext.currentTime);
   
   noise.connect(noiseFilter);
   noiseFilter.connect(noiseGain);
   noiseGain.connect(gainNode);
-
-  pads.forEach(p => p.osc.start());
+  
+  // Start all sources
+  oscillators.forEach(osc => osc.start());
   lfo.start();
   noise.start();
-
+  
   return {
     stop: () => {
-      pads.forEach(p => { try { p.osc.stop(); } catch {} });
+      oscillators.forEach(osc => { try { osc.stop(); } catch {} });
       try { lfo.stop(); } catch {}
       try { noise.stop(); } catch {}
     }
   };
 }
 
-// Hover sound - subtle high blip
+// Hover sound - subtle digital blip
 function playHoverSound(audioContext: AudioContext, volume: number) {
   const osc = audioContext.createOscillator();
   osc.type = 'sine';
   osc.frequency.setValueAtTime(1200, audioContext.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(800, audioContext.currentTime + 0.08);
+  osc.frequency.exponentialRampToValueAtTime(900, audioContext.currentTime + 0.06);
   
   const oscGain = audioContext.createGain();
-  oscGain.gain.setValueAtTime(0.08 * volume, audioContext.currentTime);
-  oscGain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.08);
+  oscGain.gain.setValueAtTime(0.06 * volume, audioContext.currentTime);
+  oscGain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.06);
   
-  const filter = audioContext.createBiquadFilter();
-  filter.type = 'bandpass';
-  filter.frequency.setValueAtTime(1000, audioContext.currentTime);
-  filter.Q.setValueAtTime(2, audioContext.currentTime);
-  
-  osc.connect(filter);
-  filter.connect(oscGain);
+  osc.connect(oscGain);
   oscGain.connect(audioContext.destination);
   
   osc.start();
-  osc.stop(audioContext.currentTime + 0.1);
+  osc.stop(audioContext.currentTime + 0.08);
 }
 
 // Click sound - satisfying mechanical click
 function playClickSound(audioContext: AudioContext, volume: number) {
   const osc = audioContext.createOscillator();
   osc.type = 'square';
-  osc.frequency.setValueAtTime(150, audioContext.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(80, audioContext.currentTime + 0.05);
+  osc.frequency.setValueAtTime(120, audioContext.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(60, audioContext.currentTime + 0.04);
   
   const oscGain = audioContext.createGain();
-  oscGain.gain.setValueAtTime(0.15 * volume, audioContext.currentTime);
-  oscGain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.06);
-  
-  const bufferSize = Math.floor(audioContext.sampleRate * 0.05);
-  const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
-  const output = noiseBuffer.getChannelData(0);
-  for (let i = 0; i < bufferSize; i++) {
-    output[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
-  }
-  
-  const noise = audioContext.createBufferSource();
-  noise.buffer = noiseBuffer;
-  
-  const noiseFilter = audioContext.createBiquadFilter();
-  noiseFilter.type = 'highpass';
-  noiseFilter.frequency.setValueAtTime(2000, audioContext.currentTime);
-  
-  const noiseGain = audioContext.createGain();
-  noiseGain.gain.setValueAtTime(0.1 * volume, audioContext.currentTime);
-  noiseGain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.04);
+  oscGain.gain.setValueAtTime(0.12 * volume, audioContext.currentTime);
+  oscGain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.05);
   
   osc.connect(oscGain);
   oscGain.connect(audioContext.destination);
   
-  noise.connect(noiseFilter);
-  noiseFilter.connect(noiseGain);
-  noiseGain.connect(audioContext.destination);
-  
   osc.start();
-  noise.start();
-  osc.stop(audioContext.currentTime + 0.1);
-  noise.stop(audioContext.currentTime + 0.1);
+  osc.stop(audioContext.currentTime + 0.08);
 }
 
 export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [isMuted, setIsMuted] = useState(() => {
     try {
       const saved = localStorage.getItem('audio_muted');
-      return saved ? JSON.parse(saved) : false;
+      return saved === 'true';
     } catch {
       return false;
     }
@@ -181,36 +163,58 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const ambientRef = useRef<{ stop: () => void } | null>(null);
   const isInitializedRef = useRef(false);
 
-  const getOrCreateAudioContext = useCallback(() => {
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      // Resume if suspended
-      if (audioContextRef.current.state === 'suspended') {
-        audioContextRef.current.resume();
-      }
-      return audioContextRef.current;
-    }
+  // Initialize audio on first user interaction
+  const initializeAudio = useCallback(() => {
+    if (isInitializedRef.current) return;
     
     try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) {
+        console.warn('Web Audio API not supported');
+        return;
+      }
+      
+      const ctx = new AudioContextClass();
       audioContextRef.current = ctx;
       
+      // Create master gain node
       const masterGain = ctx.createGain();
       masterGain.gain.setValueAtTime(isMuted ? 0 : volume * 0.5, ctx.currentTime);
       masterGain.connect(ctx.destination);
       gainNodeRef.current = masterGain;
       
-      // Start ambient on first creation
-      if (!isInitializedRef.current) {
-        ambientRef.current = createAmbientSound(ctx, masterGain);
-        isInitializedRef.current = true;
-      }
+      // Start ambient sound
+      ambientRef.current = createAmbientSound(ctx, masterGain);
+      isInitializedRef.current = true;
       
-      return ctx;
+      console.log('Audio system initialized');
     } catch (error) {
-      console.error('Failed to create audio context:', error);
-      return null;
+      console.error('Failed to initialize audio:', error);
     }
   }, [isMuted, volume]);
+
+  // Set up user interaction listeners
+  useEffect(() => {
+    const handleInteraction = () => {
+      initializeAudio();
+      // Resume if suspended (browser policy)
+      if (audioContextRef.current?.state === 'suspended') {
+        audioContextRef.current.resume();
+      }
+    };
+    
+    // Listen for various user interactions
+    const events = ['click', 'keydown', 'touchstart'];
+    events.forEach(event => {
+      document.addEventListener(event, handleInteraction, { once: false, passive: true });
+    });
+    
+    return () => {
+      events.forEach(event => {
+        document.removeEventListener(event, handleInteraction);
+      });
+    };
+  }, [initializeAudio]);
 
   // Update gain when muted changes
   useEffect(() => {
@@ -222,7 +226,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       );
     }
     try {
-      localStorage.setItem('audio_muted', JSON.stringify(isMuted));
+      localStorage.setItem('audio_muted', String(isMuted));
     } catch {}
   }, [isMuted, volume]);
 
@@ -243,28 +247,34 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const setVolume = useCallback(() => {}, []);
 
   const playHover = useCallback(() => {
-    if (isMuted) return;
-    const ctx = getOrCreateAudioContext();
-    if (ctx) {
-      try {
-        playHoverSound(ctx, volume);
-      } catch (e) {
-        console.error('Hover sound error:', e);
-      }
+    if (isMuted || !audioContextRef.current) return;
+    
+    // Ensure context is running
+    if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume();
     }
-  }, [isMuted, volume, getOrCreateAudioContext]);
+    
+    try {
+      playHoverSound(audioContextRef.current, volume);
+    } catch (e) {
+      console.error('Hover sound error:', e);
+    }
+  }, [isMuted, volume]);
 
   const playClick = useCallback(() => {
-    if (isMuted) return;
-    const ctx = getOrCreateAudioContext();
-    if (ctx) {
-      try {
-        playClickSound(ctx, volume);
-      } catch (e) {
-        console.error('Click sound error:', e);
-      }
+    if (isMuted || !audioContextRef.current) return;
+    
+    // Ensure context is running
+    if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume();
     }
-  }, [isMuted, volume, getOrCreateAudioContext]);
+    
+    try {
+      playClickSound(audioContextRef.current, volume);
+    } catch (e) {
+      console.error('Click sound error:', e);
+    }
+  }, [isMuted, volume]);
 
   return (
     <AudioContextReact.Provider value={{ isMuted, setIsMuted, toggleMute, volume, setVolume, playHover, playClick }}>
