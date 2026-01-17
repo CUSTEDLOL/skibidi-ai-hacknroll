@@ -3,30 +3,44 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Header } from "@/components/layout/Header";
 import { Background } from "@/components/layout/Background";
 import { HomeScreen } from "@/components/screens/HomeScreen";
+import { GameConfigScreen } from "@/components/screens/GameConfigScreen";
 import { RoleSelectionScreen } from "@/components/screens/RoleSelectionScreen";
 import { SearcherScreen } from "@/components/screens/SearcherScreen";
 import { GuesserScreen } from "@/components/screens/GuesserScreen";
 import { HowToPlayModal } from "@/components/screens/HowToPlayModal";
 import { TopicReveal } from "@/components/game/TopicReveal";
 import { RoundResult } from "@/components/game/RoundResult";
+import { GameConfig, DEFAULT_CONFIG } from "@/lib/gameConfig";
 
-type GameScreen = "home" | "role-select" | "topic-reveal" | "searcher" | "guesser" | "results";
+type GameScreen = "home" | "game-config" | "role-select" | "topic-reveal" | "searcher" | "guesser" | "results";
 
 const Index = () => {
   const [currentScreen, setCurrentScreen] = useState<GameScreen>("home");
   const [selectedRole, setSelectedRole] = useState<"searcher" | "guesser" | null>(null);
   const [showHowToPlay, setShowHowToPlay] = useState(false);
+  const [gameConfig, setGameConfig] = useState<GameConfig>(DEFAULT_CONFIG);
 
   // Demo data
   const demoTopic = "Moon Landing";
   const demoForbiddenWords = ["moon", "apollo", "armstrong", "nasa", "space"];
 
   const handleStartGame = () => {
+    setCurrentScreen("game-config");
+  };
+
+  const handleConfigContinue = (config: GameConfig) => {
+    setGameConfig(config);
     setCurrentScreen("role-select");
   };
 
-  const handleRoleSelect = (role: "searcher" | "guesser") => {
-    setSelectedRole(role);
+  const handleRoleSelect = (role: "searcher" | "guesser" | "random") => {
+    // Resolve random role
+    if (role === "random") {
+      const actualRole = Math.random() < 0.5 ? "searcher" : "guesser";
+      setSelectedRole(actualRole);
+    } else {
+      setSelectedRole(role);
+    }
     setCurrentScreen("topic-reveal");
   };
 
@@ -53,6 +67,7 @@ const Index = () => {
   const handleContinue = () => {
     setCurrentScreen("home");
     setSelectedRole(null);
+    setGameConfig(DEFAULT_CONFIG);
   };
 
   return (
@@ -75,6 +90,21 @@ const Index = () => {
           </motion.div>
         )}
 
+        {currentScreen === "game-config" && (
+          <motion.div
+            key="game-config"
+            initial={{ opacity: 0, x: 50 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -50 }}
+          >
+            <GameConfigScreen
+              onBack={() => setCurrentScreen("home")}
+              onContinue={handleConfigContinue}
+              initialConfig={gameConfig}
+            />
+          </motion.div>
+        )}
+
         {currentScreen === "role-select" && (
           <motion.div
             key="role-select"
@@ -83,7 +113,7 @@ const Index = () => {
             exit={{ opacity: 0, x: -50 }}
           >
             <RoleSelectionScreen
-              onBack={() => setCurrentScreen("home")}
+              onBack={() => setCurrentScreen("game-config")}
               onContinue={handleRoleSelect}
             />
           </motion.div>
