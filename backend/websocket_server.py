@@ -363,72 +363,85 @@ def handle_searcher_make_search(data: dict):
     print(f"[DEBUG] Request from: {request.sid}")
     print(f"[DEBUG] Data received: {data}")
 
-    room_key = data.get('room_key', '').upper().strip()
-    search_query = data.get('query', '').strip()
+    try:
+        room_key = data.get('room_key', '').upper().strip()
+        search_query = data.get('query', '').strip()
 
-    print(f"[DEBUG] Room key: {room_key}")
-    print(f"[DEBUG] Search query: {search_query}")
+        print(f"[DEBUG] Room key: {room_key}")
+        print(f"[DEBUG] Search query: {search_query}")
 
-    room = get_room(room_key)
-    player = get_player_in_room(room_key, request.sid)
+        room = get_room(room_key)
+        player = get_player_in_room(room_key, request.sid)
 
-    if not player or player.role != Role.SEARCHER:
-        print(
-            f"[DEBUG] ERROR: Player not authorized (role: {player.role if player else 'None'})")
-        emit('error', {'message': 'Only searcher can make searches'})
-        return
+        if not player or player.role != Role.SEARCHER:
+            print(
+                f"[DEBUG] ERROR: Player not authorized (role: {player.role if player else 'None'})")
+            emit('error', {'message': 'Only searcher can make searches'})
+            return
 
-    if not room.game_active:
-        print(f"[DEBUG] ERROR: Game not active")
-        emit('error', {'message': 'Game is not active'})
-        return
+        if not room.game_active:
+            print(f"[DEBUG] ERROR: Game not active")
+            emit('error', {'message': 'Game is not active'})
+            return
 
-    if not search_query:
-        print(f"[DEBUG] ERROR: Empty search query")
-        emit('error', {'message': 'Search query is required'})
-        return
+        if not search_query:
+            print(f"[DEBUG] ERROR: Empty search query")
+            emit('error', {'message': 'Search query is required'})
+            return
 
-    # Validate query doesn't contain forbidden words using shared logic
-    validation_result = validate_query_logic(
-        search_query, room.forbidden_words)
+        # Validate query doesn't contain forbidden words using shared logic
+        validation_result = validate_query_logic(
+            search_query, room.forbidden_words)
 
-    print(f"[DEBUG] Validation result: {validation_result}")
+        print(f"[DEBUG] Validation result: {validation_result}")
 
-    if not validation_result['valid']:
-        print(
-            f"[DEBUG] Query validation failed: {validation_result['violations']}")
-        emit('search_result', {
-            'query': search_query,
-            'results': [],
-            'valid': False,
-            'violations': validation_result['violations'],
-            'message': validation_result['message']
-        })
-        return
+        if not validation_result['valid']:
+            print(
+                f"[DEBUG] Query validation failed: {validation_result['violations']}")
+            emit('search_result', {
+                'query': search_query,
+                'results': [],
+                'valid': False,
+                'violations': validation_result['violations'],
+                'message': validation_result['message']
+            })
+            return
 
-    # Check cache first
-    cache_key = search_query.lower().strip()
-    cached_data = room.search_cache.get(cache_key)
+        # Check cache first
+        cache_key = search_query.lower().strip()
+        cached_data = room.search_cache.get(cache_key)
 
-    print(f"[DEBUG] Cache key: {cache_key}")
-    print(f"[DEBUG] Cache hit: {cached_data is not None}")
+        print(f"[DEBUG] Cache key: {cache_key}")
+        print(f"[DEBUG] Cache hit: {cached_data is not None}")
 
-    if cached_data:
-        # Use cached results
-        results = cached_data['unredacted']
-        results_with_indicators = cached_data['indicators']
+        if cached_data:
+            # Use cached results
+            results = cached_data['unredacted']
+            results_with_indicators = cached_data['indicators']
 
-        print(f"[DEBUG] Using cached results: {len(results)} items")
-        print(
-            f"Searcher {request.sid} used cached search: {search_query} ({len(results)} results)")
-    else:
-        # Perform new search
-        print(f"[DEBUG] Performing new search...")
-        try:
+            print(f"[DEBUG] Using cached results: {len(results)} items")
+            print(
+                f"Searcher {request.sid} used cached search: {search_query} ({len(results)} results)")
+        else:
+            # Perform new search
+            print(f"[DEBUG] Performing new search...")
             results = google_search(search_query, num_results=5)
             print(f"[DEBUG] Google search returned: {len(results)} results")
 
+            if not results:
+                print(f"[DEBUG] WARNING: No results from Google search")
+                emit('search_result', {
+                    'query': search_query,
+                    'results': [],
+                    'count': 0,
+                    'valid': True,
+                    'query_index': len(room.search_queries),
+                    'message': 'Search completed but no results found'
+                })
+                return
+
             # Generate redaction indicators for partial redaction display
+            print(f"[DEBUG] Starting identify_redacted_terms...")
             results_with_indicators = identify_redacted_terms(
                 results,
                 room.forbidden_words,
@@ -438,6 +451,7 @@ def handle_searcher_make_search(data: dict):
             print(f"[DEBUG] Generated redaction indicators")
 
             # Generate fully redacted version for guessers
+            print(f"[DEBUG] Starting redact_with_gemini...")
             redacted_results = redact_with_gemini(
                 results,
                 room.forbidden_words,
@@ -458,33 +472,41 @@ def handle_searcher_make_search(data: dict):
             print(
                 f"Searcher {request.sid} made new search: {search_query} ({len(results)} results)")
 
-        except Exception as e:
-            print(f"[DEBUG] ERROR: Search failed: {e}")
-            import traceback
-            traceback.print_exc()
+        # Store the search query and results
+        search_entry = {
+            'query': search_query,
+            'results': results,
+            'results_with_indicators': results_with_indicators,
+            'timestamp': len(room.search_queries)
+        }
+        room.search_queries.append(search_entry)
+
+        print(f"[DEBUG] Search history length: {len(room.search_queries)}")
+        print(
+            f"[DEBUG] Sending results with {len(results_with_indicators)} items")
+        print(f"[DEBUG] About to emit search_result to {request.sid}")
+
+        # CRITICAL: Make sure we emit the response
+        emit('search_result', {
+            'query': search_query,
+            'results': results_with_indicators,
+            'count': len(results),
+            'valid': True,
+            'query_index': len(room.search_queries) - 1,
+            'message': f'Search completed: {len(results)} results'
+        })
+
+        print(f"[DEBUG] Successfully emitted search_result")
+
+    except Exception as e:
+        print(f"[DEBUG] CRITICAL ERROR in handle_searcher_make_search: {e}")
+        import traceback
+        traceback.print_exc()
+        # ALWAYS send a response to prevent hanging
+        try:
             emit('error', {'message': f'Search failed: {str(e)}'})
-            return
-
-    # Store the search query and results
-    search_entry = {
-        'query': search_query,
-        'results': results,
-        'results_with_indicators': results_with_indicators,
-        'timestamp': len(room.search_queries)
-    }
-    room.search_queries.append(search_entry)
-
-    print(f"[DEBUG] Search history length: {len(room.search_queries)}")
-    print(f"[DEBUG] Sending results with {len(results_with_indicators)} items")
-
-    emit('search_result', {
-        'query': search_query,
-        'results': results_with_indicators,
-        'count': len(results),
-        'valid': True,
-        'query_index': len(room.search_queries) - 1,
-        'message': f'Search completed: {len(results)} results'
-    })
+        except:
+            print(f"[DEBUG] FAILED TO EMIT ERROR MESSAGE")
 
     print(f"[DEBUG] ========== searcher_make_search END ==========\n")
 

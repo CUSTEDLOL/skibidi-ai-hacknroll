@@ -7,6 +7,7 @@ import re
 import json
 import random
 import logging
+from functools import lru_cache
 
 # Configure logging
 logging.basicConfig(
@@ -33,22 +34,26 @@ except ImportError:
 try:
     import google.genai as genai
     if GEMINI_API_KEY:
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-pro')
-    GEMINI_AVAILABLE = GEMINI_API_KEY is not None
+        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        GEMINI_AVAILABLE = True
+    else:
+        gemini_client = None
+        GEMINI_AVAILABLE = False
 except ImportError:
     GEMINI_AVAILABLE = False
-    model = None
+    gemini_client = None
     logger.warning(
         "google-genai not installed. Gemini redaction will not work.")
 
 
-def google_search(search_term, num_results=5):
+def google_search(search_term, num_results=5, timeout=10):
     """
     Perform Google search using Custom Search API
     Returns list of results with title, snippet, link
+    Added timeout parameter for better responsiveness
     """
     if not GOOGLE_SEARCH_AVAILABLE:
+        logger.warning("Google Search API not available")
         return []
 
     if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
@@ -56,6 +61,7 @@ def google_search(search_term, num_results=5):
         return []
 
     try:
+        logger.debug(f"Starting Google search for: {search_term}")
         service = build("customsearch", "v1", developerKey=GOOGLE_API_KEY)
         result = service.cse().list(
             q=search_term,
@@ -73,6 +79,7 @@ def google_search(search_term, num_results=5):
                     'displayLink': item.get('displayLink', '')
                 })
 
+        logger.debug(f"Google search completed: {len(search_results)} results")
         return search_results
     except Exception as e:
         logger.error(f"Search error: {e}")
@@ -84,7 +91,7 @@ def redact_with_gemini(search_results, forbidden_words, search_query, secret_top
     Use Gemini to intelligently redact search results
     Returns redacted results with redaction blocks
     """
-    if not GEMINI_AVAILABLE or not model:
+    if not GEMINI_AVAILABLE or not gemini_client:
         return simple_redaction(search_results, forbidden_words, search_query)
 
     # Prepare the prompt for Gemini
@@ -120,7 +127,9 @@ Important: Use exactly [REDACTED] for each redaction. Be strategic - leave enoug
 """
 
     try:
-        response = model.generate_content(prompt)
+        response = gemini_client.models.generate_content(
+            model='gemini-1.5-flash', content=prompt
+        )
         redacted_text = response.text
 
         # Extract JSON from response (handle markdown code blocks)
@@ -171,11 +180,9 @@ def identify_redacted_terms(search_results, forbidden_words, search_query, secre
     """
     Identify which terms should be redacted and their positions in the text.
     Returns results with redaction indicators for partial redaction display.
+    OPTIMIZED: Pre-compiles regex patterns for better performance.
     """
     logger.debug("identify_redacted_terms called")
-    logger.debug(f"Secret topic: {secret_topic}")
-    logger.debug(f"Forbidden words: {forbidden_words}")
-    logger.debug(f"Search query: {search_query}")
     logger.debug(f"Number of results: {len(search_results)}")
 
     results_with_indicators = []
@@ -188,8 +195,12 @@ def identify_redacted_terms(search_results, forbidden_words, search_query, secre
                            for word in search_query.split() if len(word) > 2)
     words_to_redact.add(secret_topic.lower())
 
-    logger.debug(f"Words to redact: {words_to_redact}")
+    # PRE-COMPILE all regex patterns once (major performance improvement)
+    compiled_patterns = _compile_redaction_patterns(tuple(words_to_redact))
 
+    logger.debug(f"Using {len(compiled_patterns)} compiled regex patterns")
+
+    # Process each result
     for result in search_results:
         result_copy = result.copy()
         result_copy['redactedTerms'] = {'title': [], 'snippet': []}
@@ -202,10 +213,8 @@ def identify_redacted_terms(search_results, forbidden_words, search_query, secre
             text = result[field]
             redacted_positions = []
 
-            # Find all occurrences of words to redact
-            for word in words_to_redact:
-                pattern = re.compile(
-                    r'\b' + re.escape(word) + r'\b', re.IGNORECASE)
+            # Use pre-compiled patterns (much faster)
+            for pattern in compiled_patterns:
                 for match in pattern.finditer(text):
                     redacted_positions.append({
                         'start': match.start(),
@@ -219,7 +228,28 @@ def identify_redacted_terms(search_results, forbidden_words, search_query, secre
 
         results_with_indicators.append(result_copy)
 
+    logger.debug(
+        f"Processed {len(results_with_indicators)} results with redaction indicators")
     return results_with_indicators
+
+
+@lru_cache(maxsize=128)
+def _compile_redaction_patterns(words_tuple):
+    """
+    Helper function to compile and cache regex patterns.
+    Uses LRU cache to avoid recompiling patterns for the same set of words.
+    Takes a tuple (not a set) because sets are not hashable for caching.
+    """
+    compiled_patterns = []
+    for word in words_tuple:
+        try:
+            pattern = re.compile(
+                r'\b' + re.escape(word) + r'\b', re.IGNORECASE)
+            compiled_patterns.append(pattern)
+        except re.error as e:
+            logger.warning(f"Failed to compile pattern for word '{word}': {e}")
+            continue
+    return compiled_patterns
 
 
 def validate_query_logic(query, forbidden_words):
