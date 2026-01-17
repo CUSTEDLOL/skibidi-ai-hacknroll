@@ -8,13 +8,12 @@ import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
 import { GlowButton } from "@/components/ui/GlowButton";
 import { 
   getOrCreatePlayerId, 
-  generateLobbyCode, 
   DIFFICULTY_PRESETS, 
   CATEGORIES,
   type GameSettings 
 } from "@/lib/playerUtils";
 import { socket } from "@/socket";
-const API_BASE = "http://127.0.0.1:5000";
+import { createLobby } from "@/lib/api";
 
 
 type Difficulty = 'easy' | 'medium' | 'hard' | 'custom';
@@ -84,42 +83,22 @@ const handleCreateRoom = async () => {
       spectatorMode,
     };
 
-    // 1) Create lobby on backend (backend generates lobbyCode + lobbyId)
-    const res = await fetch(`${API_BASE}/api/create-lobby`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        isPublic,
-        playerName: playerId, // or a username input
-        userId: playerId,
-        // OPTIONAL: if you later want backend to store settings, add it here:
-        // settings,
-      }),
+    // Create lobby on backend (backend generates lobbyCode + lobbyId)
+    const data = await createLobby({
+      isPublic,
+      playerName: playerId,
+      userId: playerId,
     });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error || "Failed to create lobby");
-    }
+    const { lobbyId, lobbyCode } = data;
 
-    const data = await res.json();
-    const { lobbyId, lobbyCode } = data as { lobbyId: string; lobbyCode: string };
-
-    // 2) (Temporary) keep settings client-side until backend supports it
-    // This replaces your old localStorage lobby creation
+    // Keep settings client-side until backend supports it
     localStorage.setItem(
       "current_lobby_settings",
       JSON.stringify({ lobbyId, lobbyCode, hostId: playerId, settings })
     );
 
-    // 3) (Optional) if socket already connected at App root, you *can* join now.
-    // BUT recommended: do this in Lobby page after it loads.
-    // If you want to do it here anyway:
-    if (socket.connected) {
-      socket.emit("lobby:join", { lobbyId, userId: playerId });
-    }
-
-    // 4) Navigate using lobby code (URL join key)
+    // Navigate using lobby code (URL join key)
     navigate(`/lobby/${lobbyCode}`);
   } catch (e: any) {
     console.error(e);

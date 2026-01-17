@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Background } from "@/components/layout/Background";
 import { Timer } from "@/components/ui/Timer";
@@ -8,6 +8,7 @@ import { TerminalInput } from "@/components/ui/TerminalInput";
 import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
 import { FileText, BarChart3, Calendar, User, MapPin, MessageSquare, HelpCircle } from "lucide-react";
 import { GlowButton } from "@/components/ui/GlowButton";
+import { toast } from "sonner";
 
 interface ExtractedClue {
   type: "date" | "person" | "location" | "quote";
@@ -15,56 +16,141 @@ interface ExtractedClue {
   icon: React.ReactNode;
 }
 
+interface RedactedResult {
+  source: string;
+  title: string;
+  snippet: string;
+  link?: string;
+}
+
 const GuesserActive = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [guessHistory, setGuessHistory] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [redactedResults, setRedactedResults] = useState<RedactedResult[]>([]);
 
-  // Demo data
-  const round = 2;
-  const totalRounds = 5;
-  const attemptsRemaining = 5 - guessHistory.length;
+  // Get game state from location state or use defaults
+  const round = (location.state as any)?.round || 1;
+  const totalRounds = (location.state as any)?.totalRounds || 5;
+  const timeLimit = (location.state as any)?.timeLimit || 120;
+  const maxAttempts = (location.state as any)?.maxAttempts || 5;
 
-  const redactedResults = [
-    {
-      source: "wikipedia.org",
-      content: "The █████ █████ was a historic event in 1969 when █████ became the first person to walk on the █████...",
-    },
-    {
-      source: "history.com",
-      content: "NASA's █████ program achieved its goal when █████ said 'That's one small step for man, one giant leap for mankind'...",
-    },
-    {
-      source: "space.com",
-      content: "The Eagle has landed at Tranquility Base, marking humanity's greatest achievement in exploration...",
-    },
-  ];
+  const attemptsRemaining = maxAttempts - guessHistory.length;
 
-  const extractedClues: ExtractedClue[] = [
-    { type: "date", value: "1969", icon: <Calendar className="w-4 h-4" /> },
-    { type: "person", value: "NASA", icon: <User className="w-4 h-4" /> },
-    { type: "location", value: "Tranquility Base", icon: <MapPin className="w-4 h-4" /> },
-    { type: "quote", value: "Eagle has landed", icon: <MessageSquare className="w-4 h-4" /> },
-  ];
+  // Load redacted results from location state or WebSocket
+  useEffect(() => {
+    const resultsFromState = (location.state as any)?.redactedResults;
+    if (resultsFromState && Array.isArray(resultsFromState)) {
+      setRedactedResults(resultsFromState);
+    } else {
+      // Default demo data if nothing provided
+      setRedactedResults([
+        {
+          source: "wikipedia.org",
+          title: "The █████ █████ was a historic event",
+          snippet: "In July 1969, the world witnessed a historic moment when █████ became the first person to walk on the █████...",
+        },
+        {
+          source: "history.com",
+          title: "█████ Program Achievement",
+          snippet: "The ambitious program achieved its goal when █████ said 'That's one small step for man, one giant leap for mankind'...",
+        },
+        {
+          source: "space.com",
+          title: "One Small Step for Mankind",
+          snippet: "The Eagle has landed at Tranquility Base, marking humanity's greatest achievement in exploration...",
+        },
+      ]);
+    }
+  }, [location.state]);
+
+  // Extract clues from redacted results (simple extraction for demo)
+  const extractedClues: ExtractedClue[] = [];
+  redactedResults.forEach((result) => {
+    const text = `${result.title} ${result.snippet}`;
+    
+    // Extract dates (4-digit years)
+    const yearMatch = text.match(/\b(19|20)\d{2}\b/);
+    if (yearMatch && !extractedClues.find(c => c.type === "date" && c.value === yearMatch[0])) {
+      extractedClues.push({
+        type: "date",
+        value: yearMatch[0],
+        icon: <Calendar className="w-4 h-4" />,
+      });
+    }
+    
+    // Extract locations (capitalized words that might be places)
+    const locationMatch = text.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b/);
+    if (locationMatch && locationMatch[0].length > 3 && 
+        !extractedClues.find(c => c.type === "location" && c.value === locationMatch[0])) {
+      extractedClues.push({
+        type: "location",
+        value: locationMatch[0],
+        icon: <MapPin className="w-4 h-4" />,
+      });
+    }
+  });
+
+  // Add some default clues if none extracted
+  if (extractedClues.length === 0) {
+    extractedClues.push(
+      { type: "date", value: "1969", icon: <Calendar className="w-4 h-4" /> },
+      { type: "person", value: "NASA", icon: <User className="w-4 h-4" /> },
+      { type: "location", value: "Tranquility Base", icon: <MapPin className="w-4 h-4" /> },
+      { type: "quote", value: "Eagle has landed", icon: <MessageSquare className="w-4 h-4" /> }
+    );
+  }
 
   const handleGuess = async (guess: string) => {
+    if (attemptsRemaining <= 0) {
+      toast.error("No attempts remaining");
+      return;
+    }
+
+    if (guessHistory.includes(guess)) {
+      toast.error("You've already tried that guess");
+      return;
+    }
+
     setGuessHistory(prev => [...prev, guess]);
     setIsSubmitting(true);
 
-    // Simulate submission delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      // In a real app, this would submit to backend API
+      // For now, simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // Navigate to results (in real app, would check correctness)
-    navigate("/game/round-result");
+      // Check if guess is correct (this would come from backend)
+      // For demo, we'll navigate to results
+      navigate("/game/round-result", {
+        state: {
+          guess,
+          guessHistory,
+          round,
+          correct: false, // Would come from backend
+        },
+      });
+    } catch (error: any) {
+      console.error("Failed to submit guess:", error);
+      toast.error(error.message || "Failed to submit guess");
+      setIsSubmitting(false);
+    }
   };
 
   const handleRequestHint = () => {
     // In real app, would reveal more clues at cost of points
-    console.log("Hint requested");
+    toast.info("Hint requested (would cost 25 points)");
   };
 
   const handleTimeUp = () => {
-    navigate("/game/round-result");
+    navigate("/game/round-result", {
+      state: {
+        guessHistory,
+        round,
+        timeUp: true,
+      },
+    });
   };
 
   return (
@@ -80,10 +166,10 @@ const GuesserActive = () => {
               ROUND <span className="text-primary">{round}</span>/{totalRounds}
             </div>
             <div className="font-mono text-sm text-muted-foreground">
-              ATTEMPTS: <span className="text-primary">{attemptsRemaining}</span>/5
+              ATTEMPTS: <span className="text-primary">{attemptsRemaining}</span>/{maxAttempts}
             </div>
           </div>
-          <Timer seconds={120} onComplete={handleTimeUp} size="md" />
+          <Timer seconds={timeLimit} onComplete={handleTimeUp} size="md" />
           <ClassifiedStamp type="classified" className="text-xs" animate={false} />
         </div>
 
@@ -114,8 +200,11 @@ const GuesserActive = () => {
                   <p className="font-mono text-xs text-muted-foreground mb-2">
                     Source: {result.source}
                   </p>
+                  <h3 className="font-mono text-sm font-bold text-foreground mb-2">
+                    {result.title}
+                  </h3>
                   <p className="font-mono text-sm text-foreground leading-relaxed">
-                    {result.content}
+                    {result.snippet}
                   </p>
                 </motion.div>
               ))}

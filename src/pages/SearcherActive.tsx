@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Background } from "@/components/layout/Background";
 import { Timer } from "@/components/ui/Timer";
@@ -9,69 +9,149 @@ import { SearchResult, SearchResultSkeleton } from "@/components/ui/SearchResult
 import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
 import { X, Search, Lightbulb, Send } from "lucide-react";
 import { GlowButton } from "@/components/ui/GlowButton";
+import { search, validateQuery, getRandomTopic, type SearchResponse } from "@/lib/api";
+import { toast } from "sonner";
 
 interface SearchResultData {
   source: string;
   title: string;
   snippet: string;
   confidence: number;
+  link?: string;
+  displayLink?: string;
+}
+
+interface SearchHistoryItem {
+  query: string;
+  results: SearchResultData[];
+  timestamp: number;
 }
 
 const SearcherActive = () => {
   const navigate = useNavigate();
-  const [searchHistory, setSearchHistory] = useState<string[]>([]);
-  const [results, setResults] = useState<SearchResultData[]>([]);
+  const location = useLocation();
+  const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
+  const [currentResults, setCurrentResults] = useState<SearchResultData[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [selectedQueryIndex, setSelectedQueryIndex] = useState<number | null>(null);
 
-  // Demo data
-  const secretTopic = "Moon Landing";
-  const forbiddenWords = ["moon", "apollo", "armstrong", "nasa", "space"];
-  const round = 2;
-  const totalRounds = 5;
-  const searchesRemaining = 3 - searchHistory.length;
+  // Get game state from location state or use defaults
+  const secretTopic = (location.state as any)?.secretTopic || "Moon Landing";
+  const forbiddenWords = (location.state as any)?.forbiddenWords || ["moon", "apollo", "armstrong", "nasa", "space"];
+  const round = (location.state as any)?.round || 1;
+  const totalRounds = (location.state as any)?.totalRounds || 5;
+  const timeLimit = (location.state as any)?.timeLimit || 120;
+  const maxSearches = (location.state as any)?.maxSearches || 3;
+
+  const searchesRemaining = maxSearches - searchHistory.length;
+
+  // If no topic provided, fetch one
+  useEffect(() => {
+    if (!location.state?.secretTopic) {
+      getRandomTopic().then((topicData) => {
+        // Store in location state or use it directly
+        // For now, we'll just use it - in a real app, this would come from game state
+      }).catch((error) => {
+        console.error("Failed to get topic:", error);
+      });
+    }
+  }, []);
 
   const handleSearch = async (query: string) => {
-    setSearchHistory(prev => [...prev, query]);
+    if (searchesRemaining <= 0) {
+      toast.error("No searches remaining");
+      return;
+    }
+
     setIsSearching(true);
     setShowResults(false);
 
-    // Simulate search delay
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      // First validate the query
+      const validation = await validateQuery({
+        query,
+        forbidden_words: forbiddenWords,
+      });
 
-    // Mock results
-    setResults([
-      {
-        source: "wikipedia.org",
-        title: "The Historic █████ of 1969",
-        snippet: "In July 1969, the world witnessed a historic moment when astronauts successfully completed their mission to █████...",
-        confidence: 85,
-      },
-      {
-        source: "history.com",
-        title: "█████ Program Achievement",
-        snippet: "The ambitious program achieved its goal when █████ became the first person to walk on the lunar surface...",
-        confidence: 72,
-      },
-      {
-        source: "space.com",
-        title: "One Small Step for Mankind",
-        snippet: "\"That's one small step for man, one giant leap for mankind\" - these words echoed across the world on July 20...",
-        confidence: 90,
-      },
-    ]);
+      if (!validation.valid) {
+        toast.error(validation.message);
+        setIsSearching(false);
+        return;
+      }
 
-    setIsSearching(false);
-    setShowResults(true);
+      // Perform the search
+      const searchResponse: SearchResponse = await search({ query });
+
+      // Transform results to match our UI format
+      const transformedResults: SearchResultData[] = searchResponse.results.map((result, index) => ({
+        source: result.displayLink || new URL(result.link).hostname,
+        title: result.title,
+        snippet: result.snippet,
+        confidence: 85 - index * 5, // Mock confidence based on order
+        link: result.link,
+        displayLink: result.displayLink,
+      }));
+
+      // Add to search history
+      const historyItem: SearchHistoryItem = {
+        query,
+        results: transformedResults,
+        timestamp: Date.now(),
+      };
+
+      setSearchHistory(prev => [...prev, historyItem]);
+      setCurrentResults(transformedResults);
+      setIsSearching(false);
+      setShowResults(true);
+      setSelectedQueryIndex(searchHistory.length); // Index of the newly added search
+    } catch (error: any) {
+      console.error("Search failed:", error);
+      toast.error(error.message || "Search failed");
+      setIsSearching(false);
+    }
   };
 
   const handleSubmitToGuesser = () => {
-    // In real app, this would send results to guesser
-    navigate("/game/round-result");
+    if (selectedQueryIndex === null || !searchHistory[selectedQueryIndex]) {
+      toast.error("Please select a search result to send");
+      return;
+    }
+
+    // In a real app, this would send results to the backend/guesser via WebSocket
+    // For now, navigate to round result
+    const selectedSearch = searchHistory[selectedQueryIndex];
+    
+    // Store the selected search in location state for the next screen
+    navigate("/game/round-result", {
+      state: {
+        selectedQuery: selectedSearch.query,
+        selectedResults: selectedSearch.results,
+        secretTopic,
+        round,
+      },
+    });
   };
 
   const handleTimeUp = () => {
-    navigate("/game/round-result");
+    // Auto-submit the last search if available
+    if (searchHistory.length > 0 && selectedQueryIndex === null) {
+      setSelectedQueryIndex(searchHistory.length - 1);
+    }
+    navigate("/game/round-result", {
+      state: {
+        selectedQuery: searchHistory[selectedQueryIndex || searchHistory.length - 1]?.query,
+        selectedResults: searchHistory[selectedQueryIndex || searchHistory.length - 1]?.results,
+        secretTopic,
+        round,
+      },
+    });
+  };
+
+  const handleSelectQuery = (index: number) => {
+    setSelectedQueryIndex(index);
+    setCurrentResults(searchHistory[index].results);
+    setShowResults(true);
   };
 
   return (
@@ -90,7 +170,7 @@ const SearcherActive = () => {
               SEARCHES: <span className="text-primary">{searchesRemaining}</span>
             </div>
           </div>
-          <Timer seconds={120} onComplete={handleTimeUp} size="md" />
+          <Timer seconds={timeLimit} onComplete={handleTimeUp} size="md" />
           <ClassifiedStamp type="classified" className="text-xs" animate={false} />
         </div>
 
@@ -163,16 +243,18 @@ const SearcherActive = () => {
                 </motion.div>
               )}
 
-              {showResults && !isSearching && (
+              {showResults && !isSearching && currentResults.length > 0 && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   className="space-y-4"
                 >
                   <div className="text-center font-mono text-sm text-primary mb-4">
-                    QUERY SENT TO GUESSER...
+                    {selectedQueryIndex !== null 
+                      ? `SELECTED QUERY: "${searchHistory[selectedQueryIndex].query}"`
+                      : "SEARCH RESULTS"}
                   </div>
-                  {results.map((result, index) => (
+                  {currentResults.map((result, index) => (
                     <SearchResult
                       key={index}
                       source={result.source}
@@ -182,15 +264,17 @@ const SearcherActive = () => {
                       delay={index * 0.1}
                     />
                   ))}
-                  <GlowButton
-                    onClick={handleSubmitToGuesser}
-                    variant="primary"
-                    size="lg"
-                    icon={<Send className="w-4 h-4" />}
-                    className="w-full mt-4"
-                  >
-                    Send to Guesser
-                  </GlowButton>
+                  {selectedQueryIndex !== null && (
+                    <GlowButton
+                      onClick={handleSubmitToGuesser}
+                      variant="primary"
+                      size="lg"
+                      icon={<Send className="w-4 h-4" />}
+                      className="w-full mt-4"
+                    >
+                      Send to Guesser
+                    </GlowButton>
+                  )}
                 </motion.div>
               )}
             </div>
@@ -213,9 +297,20 @@ const SearcherActive = () => {
                 <p className="font-mono text-xs text-muted-foreground">No searches yet...</p>
               ) : (
                 <ul className="space-y-2">
-                  {searchHistory.map((query, index) => (
-                    <li key={index} className="font-mono text-xs text-muted-foreground truncate">
-                      {index + 1}. {query}
+                  {searchHistory.map((item, index) => (
+                    <li
+                      key={index}
+                      onClick={() => handleSelectQuery(index)}
+                      className={`font-mono text-xs cursor-pointer p-2 rounded transition-colors ${
+                        selectedQueryIndex === index
+                          ? 'bg-primary/20 text-primary border border-primary/50'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'
+                      }`}
+                    >
+                      {index + 1}. {item.query}
+                      {selectedQueryIndex === index && (
+                        <span className="ml-2 text-primary">✓</span>
+                      )}
                     </li>
                   ))}
                 </ul>
