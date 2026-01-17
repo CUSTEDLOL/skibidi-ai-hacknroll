@@ -158,6 +158,92 @@ def simple_redaction(search_results, forbidden_words, search_query):
         redacted_results.append(redacted_result)
 
     return redacted_results
+
+
+def validate_query_logic(query, forbidden_words):
+    """
+    Validate if a search query contains forbidden words
+    Returns validation result with violations
+    """
+    if not query or not forbidden_words:
+        return {
+            'valid': True,
+            'violations': [],
+            'message': 'Query is valid'
+        }
+    
+    query_lower = query.lower()
+    violations = []
+    
+    for word in forbidden_words:
+        word_lower = word.lower()
+        # Check if forbidden word appears in query (whole word match)
+        pattern = r'\b' + re.escape(word_lower) + r'\b'
+        if re.search(pattern, query_lower):
+            violations.append(word)
+    
+    return {
+        'valid': len(violations) == 0,
+        'violations': violations,
+        'message': f'Query contains forbidden words: {", ".join(violations)}' if violations else 'Query is valid'
+    }
+
+
+def get_random_topic_data():
+    """
+    Generate a random topic with forbidden words
+    Returns a dictionary with topic and forbidden_words
+    """
+    topics = [
+        {
+            'topic': 'Moon Landing',
+            'forbidden_words': ['moon', 'apollo', 'armstrong', 'nasa', 'space', 'lunar', 'astronaut']
+        },
+        {
+            'topic': 'Pizza',
+            'forbidden_words': ['pizza', 'cheese', 'pepperoni', 'italian', 'dough', 'slice']
+        },
+        {
+            'topic': 'Bitcoin',
+            'forbidden_words': ['bitcoin', 'crypto', 'blockchain', 'satoshi', 'mining', 'wallet']
+        },
+        {
+            'topic': 'Harry Potter',
+            'forbidden_words': ['harry', 'potter', 'hogwarts', 'voldemort', 'wizard', 'magic']
+        },
+        {
+            'topic': 'The Eiffel Tower',
+            'forbidden_words': ['eiffel', 'tower', 'paris', 'france', 'landmark', 'iron']
+        },
+        {
+            'topic': 'The Beatles',
+            'forbidden_words': ['beatles', 'lennon', 'mccartney', 'band', 'music', 'rock']
+        },
+        {
+            'topic': 'The Internet',
+            'forbidden_words': ['internet', 'web', 'online', 'network', 'digital', 'cyber']
+        },
+        {
+            'topic': 'Mount Everest',
+            'forbidden_words': ['everest', 'mountain', 'himalaya', 'summit', 'climb', 'peak']
+        },
+        {
+            'topic': 'The Mona Lisa',
+            'forbidden_words': ['mona', 'lisa', 'da vinci', 'painting', 'louvre', 'art']
+        },
+        {
+            'topic': 'The Great Wall of China',
+            'forbidden_words': ['wall', 'china', 'great', 'ancient', 'fortification', 'ming']
+        }
+    ]
+    
+    selected = random.choice(topics)
+    return {
+        'topic': selected['topic'],
+        'forbidden_words': selected['forbidden_words']
+    }
+
+
 # ============ In-Memory Storage (replace with database later) ============
 lobbies = {}  # Store active lobbies
 players = {}  # Store player sessions
@@ -167,8 +253,8 @@ socket_user_map = {}     # sid -> userId
 # Map lobbyCode to lobbyId for quick lookup
 lobby_code_map = {}
 
-# Helper to generate a 4-char alphanumeric code (upper/lowercase + numbers)
-def generate_lobby_code(length=4):
+# Helper to generate a 6-char alphanumeric code (upper/lowercase + numbers)
+def generate_lobby_code(length=6):
     chars = string.ascii_letters + string.digits
     return ''.join(random.choices(chars, k=length))
 
@@ -285,7 +371,7 @@ def create_lobby():
 @app.route('/api/join-lobby/<lobby_code>', methods=['POST'])
 def join_lobby(lobby_code):
     """
-    Join a lobby via 4-char code
+    Join a lobby via 6-char code
     Request: { "playerName": str, "userId": str }
     Response: { "lobbyId": str, "players": [...], "message": str }
     """
