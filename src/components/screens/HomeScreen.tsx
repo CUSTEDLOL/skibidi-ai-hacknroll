@@ -13,6 +13,7 @@ interface HomeScreenProps {
   onDailyChallenge?: () => void;
   onLeaderboard?: () => void;
   isSearching?: boolean;
+  isJoining?: boolean;
 }
 
 export function HomeScreen({
@@ -23,25 +24,36 @@ export function HomeScreen({
   onDailyChallenge,
   onLeaderboard,
   isSearching = false,
+  isJoining = false,
 }: HomeScreenProps) {
   const [showCodeModal, setShowCodeModal] = useState(false);
   const [roomCode, setRoomCode] = useState("");
   const [codeError, setCodeError] = useState("");
+  const [isJoiningWithCode, setIsJoiningWithCode] = useState(false);
 
   const handleCodeChange = (value: string) => {
+    // Backend expects 4 characters based on the prompt, but we had 6 before
+    // Let's use 4 as specified in the backend docs
     const upperValue = value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
     setRoomCode(upperValue);
     setCodeError("");
   };
 
-  const handleJoinWithCode = () => {
-    if (roomCode.length !== 6) {
-      setCodeError("Code must be 6 characters");
+  const handleJoinWithCode = async () => {
+    if (roomCode.length < 4) {
+      setCodeError("Code must be at least 4 characters");
       return;
     }
-    onJoinWithCode?.(roomCode);
-    setShowCodeModal(false);
-    setRoomCode("");
+    setIsJoiningWithCode(true);
+    try {
+      await onJoinWithCode?.(roomCode);
+      setShowCodeModal(false);
+      setRoomCode("");
+    } catch {
+      // Error handling is done in parent
+    } finally {
+      setIsJoiningWithCode(false);
+    }
   };
 
   return (
@@ -75,14 +87,14 @@ export function HomeScreen({
         {/* Quick Join - Primary CTA */}
         <motion.button
           onClick={onQuickJoin}
-          disabled={isSearching}
+          disabled={isSearching || isJoining}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.35 }}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           className="flex flex-col items-center gap-2 p-5 bg-card border border-primary/50 rounded-lg
-            hover:border-primary hover:bg-primary/5 transition-all group disabled:opacity-50"
+            hover:border-primary hover:bg-primary/5 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isSearching ? (
             <>
@@ -103,13 +115,14 @@ export function HomeScreen({
         <div className="grid grid-cols-2 gap-3">
           <motion.button
             onClick={onCreateRoom}
+            disabled={isSearching || isJoining}
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.4 }}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             className="flex flex-col items-center gap-2 p-4 bg-card border border-border rounded-lg
-              hover:border-primary/50 transition-all group"
+              hover:border-primary/50 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Home className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />
             <span className="font-mono text-sm font-semibold text-foreground">CREATE ROOM</span>
@@ -118,13 +131,14 @@ export function HomeScreen({
 
           <motion.button
             onClick={() => setShowCodeModal(true)}
+            disabled={isSearching || isJoining}
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.4 }}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             className="flex flex-col items-center gap-2 p-4 bg-card border border-border rounded-lg
-              hover:border-primary/50 transition-all group"
+              hover:border-primary/50 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <KeyRound className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />
             <span className="font-mono text-sm font-semibold text-foreground">ENTER CODE</span>
@@ -232,7 +246,7 @@ export function HomeScreen({
               </div>
 
               <p className="font-mono text-sm text-muted-foreground mb-4">
-                Enter the 6-character code:
+                Enter the lobby code:
               </p>
 
               <div className="relative mb-4">
@@ -240,14 +254,14 @@ export function HomeScreen({
                   type="text"
                   value={roomCode}
                   onChange={(e) => handleCodeChange(e.target.value)}
-                  placeholder="XXXXXX"
+                  placeholder="XXXX"
                   className="w-full px-4 py-4 bg-background border-2 border-border rounded-lg font-mono text-2xl 
                     text-center tracking-[0.5em] focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground/30
                     uppercase"
                   maxLength={6}
                   autoFocus
                 />
-                {roomCode.length === 6 && (
+                {roomCode.length >= 4 && (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -274,9 +288,13 @@ export function HomeScreen({
                   onClick={handleJoinWithCode}
                   variant="primary"
                   className="flex-1"
-                  disabled={roomCode.length !== 6}
+                  disabled={roomCode.length < 4 || isJoiningWithCode}
                 >
-                  JOIN
+                  {isJoiningWithCode ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    'JOIN'
+                  )}
                 </GlowButton>
               </div>
             </motion.div>

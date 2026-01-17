@@ -1,18 +1,15 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Settings, Zap, Clock, Users, Globe, Lock, ChevronDown, ChevronUp, Star } from "lucide-react";
+import { ArrowLeft, Settings, Zap, Clock, Users, Globe, Lock, ChevronDown, ChevronUp, Star, Loader2 } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { Background } from "@/components/layout/Background";
 import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
 import { GlowButton } from "@/components/ui/GlowButton";
-import { 
-  getOrCreatePlayerId, 
-  generateLobbyCode, 
-  DIFFICULTY_PRESETS, 
-  CATEGORIES,
-  type GameSettings 
-} from "@/lib/playerUtils";
+import { DIFFICULTY_PRESETS, CATEGORIES } from "@/lib/playerUtils";
+import { api, ApiError } from "@/lib/api";
+import { getOrCreateUserId, getOrCreatePlayerName, setCurrentLobby } from "@/lib/userUtils";
+import { toast } from "sonner";
 
 type Difficulty = 'easy' | 'medium' | 'hard' | 'custom';
 
@@ -21,7 +18,7 @@ const CreateRoom = () => {
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [rounds, setRounds] = useState(5);
   const [timePerRound, setTimePerRound] = useState(90);
-  const [maxPlayers, setMaxPlayers] = useState(2);
+  const [maxPlayers, setMaxPlayers] = useState(4);
   const [isPublic, setIsPublic] = useState(false);
   const [category, setCategory] = useState('general');
   const [rhythmMode, setRhythmMode] = useState(false);
@@ -61,43 +58,49 @@ const CreateRoom = () => {
   const handleCreateRoom = async () => {
     setIsCreating(true);
     
-    const playerId = getOrCreatePlayerId();
-    const lobbyCode = generateLobbyCode();
-    
-    const settings: GameSettings = {
-      difficulty,
-      rounds,
-      timePerRound,
-      maxPlayers,
-      isPublic,
-      category,
-      rhythmMode,
-      forbiddenWordsCount,
-      redactionIntensity,
-      hintCooldown,
-      searchCooldown,
-      enableChat,
-      autoRotateRoles,
-      spectatorMode,
-    };
+    try {
+      const userId = getOrCreateUserId();
+      const playerName = getOrCreatePlayerName();
+      
+      const response = await api.createLobby({
+        isPublic,
+        playerName,
+        userId,
+      });
+      
+      // Store lobby info and game config locally
+      setCurrentLobby(response.lobbyId, response.lobbyCode);
+      
+      localStorage.setItem('pending_game_config', JSON.stringify({
+        difficulty,
+        rounds,
+        timePerRound,
+        maxPlayers,
+        category,
+        rhythmMode,
+        forbiddenWordsCount,
+        redactionIntensity,
+        hintCooldown,
+        searchCooldown,
+        enableChat,
+        autoRotateRoles,
+        spectatorMode,
+      }));
+      
+      toast.success(`Room created! Code: ${response.lobbyCode}`);
+      navigate(`/lobby/${response.lobbyCode}`);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast.error(error.message);
+      } else {
+        toast.error("Failed to create room. Please try again.");
+      }
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
-    // Store lobby data in localStorage for now (will be replaced with backend)
-    localStorage.setItem('current_lobby', JSON.stringify({
-      code: lobbyCode,
-      hostId: playerId,
-      settings,
-      players: [{
-        id: playerId,
-        username: playerId,
-        isHost: true,
-        role: null,
-      }],
-      status: 'waiting',
-      chatMessages: [],
-      createdAt: new Date().toISOString(),
-    }));
-
-    // Navigate to lobby
+  // Navigate to lobby (remove old code below)
     setTimeout(() => {
       navigate(`/lobby/${lobbyCode}`);
     }, 500);
