@@ -34,10 +34,9 @@ export interface JoinRandomLobbyResponse {
 }
 
 export interface PlayerData {
-  id: string;
-  name: string;
-  role?: 'searcher' | 'guesser' | null;
-  isHost?: boolean;
+  playerId: string;
+  playerName: string;
+  role: 'searcher' | 'guesser' | null;
 }
 
 export interface GameConfig {
@@ -53,9 +52,9 @@ export interface LobbyData {
   isPublic: boolean;
   createdAt: string;
   players: PlayerData[];
-  status: 'waiting' | 'starting' | 'in_game' | 'finished';
-  gameConfig?: GameConfig;
-  gameId?: string;
+  status: 'waiting' | 'in_game' | 'finished';
+  gameConfig: GameConfig | null;
+  gameId: string | null;
 }
 
 export interface StartGameRequest {
@@ -128,6 +127,11 @@ export const api = {
       body: JSON.stringify(config),
     });
     return handleResponse<StartGameResponse>(response);
+  },
+
+  async healthCheck(): Promise<{ status: string; google_search_available: boolean; gemini_available: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/health`);
+    return handleResponse(response);
   },
 };
 

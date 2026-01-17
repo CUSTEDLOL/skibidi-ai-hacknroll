@@ -22,7 +22,7 @@ import { Header } from "@/components/layout/Header";
 import { Background } from "@/components/layout/Background";
 import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
 import { GlowButton } from "@/components/ui/GlowButton";
-import { api, ApiError, type LobbyData, type PlayerData } from "@/lib/api";
+import { api, ApiError, type LobbyData } from "@/lib/api";
 import { useSocket } from "@/hooks/useSocket";
 import { getOrCreateUserId, getOrCreatePlayerName, clearCurrentLobby, getCurrentLobby } from "@/lib/userUtils";
 import { toast } from "sonner";
@@ -82,7 +82,7 @@ const Lobby = () => {
     // Check if game started
     if (updatedLobby.status === 'in_game' && updatedLobby.gameId) {
       // Find current player's role
-      const currentPlayer = updatedLobby.players.find(p => p.id === userId);
+      const currentPlayer = updatedLobby.players.find(p => p.playerId === userId);
       if (currentPlayer?.role === 'searcher') {
         navigate('/game/searcher-briefing');
       } else {
@@ -113,8 +113,8 @@ const Lobby = () => {
     onDisconnect: handleDisconnect,
   });
 
-  // Determine if current user is host
-  const isHost = lobby?.players?.[0]?.id === userId;
+  // Determine if current user is host (first player in list)
+  const isHost = lobby?.players?.[0]?.playerId === userId;
   const canStart = lobby && lobby.players.length >= 2;
 
   const copyCode = () => {
@@ -281,7 +281,7 @@ const Lobby = () => {
           <ClassifiedStamp type="classified" className="mb-4" />
           <h1 className="font-mono text-xl text-muted-foreground mb-2">LOBBY CODE</h1>
           <div className="font-mono text-4xl md:text-5xl font-bold text-primary tracking-[0.3em]">
-            {code}
+            {lobby.lobbyCode}
           </div>
         </motion.div>
 
@@ -304,14 +304,14 @@ const Lobby = () => {
               <AnimatePresence>
                 {lobby.players.map((player, index) => (
                   <motion.div
-                    key={player.id}
+                    key={player.playerId}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 20 }}
                     className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg"
                   >
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                    <span className="font-mono text-foreground flex-1">{player.name}</span>
+                    <span className="font-mono text-foreground flex-1">{player.playerName}</span>
                     {index === 0 && (
                       <div className="flex items-center gap-1 text-accent">
                         <Crown className="w-4 h-4" />
@@ -323,7 +323,7 @@ const Lobby = () => {
               </AnimatePresence>
               
               {/* Empty slots */}
-              {Array.from({ length: (gameConfig.maxPlayers || 4) - lobby.players.length }).map((_, i) => (
+              {Array.from({ length: Math.max(0, (gameConfig.maxPlayers || 4) - lobby.players.length) }).map((_, i) => (
                 <div
                   key={`empty-${i}`}
                   className="flex items-center gap-3 p-3 bg-muted/10 rounded-lg border border-dashed border-border"
@@ -368,7 +368,7 @@ const Lobby = () => {
                 <Zap className="w-3 h-3 text-muted-foreground" />
                 <span className="font-mono text-sm text-muted-foreground">Rounds:</span>
                 <span className="font-mono text-sm text-foreground">
-                  {gameConfig.rounds === -1 ? '∞' : gameConfig.rounds || 5}
+                  {gameConfig.rounds || 5}
                 </span>
               </div>
               <div className="flex items-center gap-2">

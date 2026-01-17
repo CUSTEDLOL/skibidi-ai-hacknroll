@@ -26,7 +26,7 @@ export function useSocket({
   const [isConnecting, setIsConnecting] = useState(false);
 
   const connect = useCallback(() => {
-    if (socketRef.current?.connected) return;
+    if (socketRef.current?.connected || !lobbyId) return;
 
     setIsConnecting(true);
 
@@ -39,6 +39,7 @@ export function useSocket({
     });
 
     socket.on('connect', () => {
+      console.log('Socket connected:', socket.id);
       setIsConnected(true);
       setIsConnecting(false);
       onConnect?.();
@@ -48,19 +49,25 @@ export function useSocket({
     });
 
     socket.on('disconnect', () => {
+      console.log('Socket disconnected');
       setIsConnected(false);
       onDisconnect?.();
     });
 
+    // Listen for lobby state updates
     socket.on('lobby:state', (data: { lobby: LobbyData }) => {
+      console.log('Lobby state update:', data);
       onLobbyUpdate?.(data.lobby);
     });
 
+    // Listen for errors
     socket.on('error', (data: { error: string }) => {
+      console.error('Socket error:', data.error);
       onError?.(data.error);
     });
 
-    socket.on('connect_error', () => {
+    socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
       setIsConnecting(false);
       onError?.('Connection failed. Retrying...');
     });
@@ -84,12 +91,14 @@ export function useSocket({
   }, [lobbyId]);
 
   useEffect(() => {
-    connect();
+    if (lobbyId) {
+      connect();
+    }
 
     return () => {
       disconnect();
     };
-  }, [connect, disconnect]);
+  }, [lobbyId, connect, disconnect]);
 
   return {
     isConnected,
