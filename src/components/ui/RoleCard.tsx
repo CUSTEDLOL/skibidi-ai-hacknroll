@@ -1,8 +1,8 @@
 import { motion } from "framer-motion";
-import { Search, FileQuestion, Dice5 } from "lucide-react";
+import { Search, FileQuestion } from "lucide-react";
 
 interface RoleCardProps {
-  role: "searcher" | "guesser" | "random";
+  role: "searcher" | "guesser";
   selected?: boolean;
   onClick?: () => void;
 }
@@ -24,14 +24,6 @@ export function RoleCard({ role, selected = false, onClick }: RoleCardProps) {
       color: "accent",
       bgGradient: "from-accent/20 to-accent/5",
       borderColor: "border-accent",
-    },
-    random: {
-      title: "RANDOM",
-      icon: Dice5,
-      description: "Let fate decide your role",
-      color: "purple-400",
-      bgGradient: "from-purple-500/20 to-pink-500/10",
-      borderColor: "border-purple-400",
     },
   };
 
