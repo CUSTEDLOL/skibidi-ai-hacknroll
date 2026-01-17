@@ -10,10 +10,22 @@ import { ChatPanel } from "@/components/ui/ChatPanel";
 import { PlayerLeaderboard } from "@/components/ui/PlayerLeaderboard";
 import { LeaveGameButton } from "@/components/ui/LeaveGameButton";
 import { EmotePanel } from "@/components/ui/EmotePanel";
-import { FileText, BarChart3, Calendar, User, MapPin, MessageSquare, HelpCircle } from "lucide-react";
+import {
+  FileText,
+  BarChart3,
+  Calendar,
+  User,
+  MapPin,
+  MessageSquare,
+  HelpCircle,
+} from "lucide-react";
 import { GlowButton } from "@/components/ui/GlowButton";
 import { toast } from "sonner";
-import { getOrCreatePlayerId, getOrCreatePlayerName, type Player } from "@/lib/playerUtils";
+import {
+  getOrCreatePlayerId,
+  getOrCreatePlayerName,
+  type Player,
+} from "@/lib/playerUtils";
 
 interface ExtractedClue {
   type: "date" | "person" | "location" | "quote";
@@ -34,17 +46,52 @@ const GuesserActive = () => {
   const [guessHistory, setGuessHistory] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [redactedResults, setRedactedResults] = useState<RedactedResult[]>([]);
-  
+  const [isWaitingForSearcher, setIsWaitingForSearcher] = useState(true);
+
   // Game state
   const playerId = getOrCreatePlayerId();
   const playerName = getOrCreatePlayerName();
-  
-  // Mock lobby data (replace with actual websocket data later)
-  const lobbyId = (location.state as any)?.lobbyId || "demo-lobby";
+
+  // Get lobbyId from location state or fallback to current_lobby_settings
+  const getLobbyId = (): string | null => {
+    const stateId = (location.state as any)?.lobbyId;
+    if (stateId) return stateId;
+
+    const settings = localStorage.getItem("current_lobby_settings");
+    if (settings) {
+      const parsed = JSON.parse(settings);
+      return parsed.lobbyId || null;
+    }
+    return null;
+  };
+
+  const lobbyId = getLobbyId();
+
   const [players, setPlayers] = useState<Player[]>([
-    { id: "p1", username: "Agent 007", score: 0, isHost: true, role: 'searcher', isReady: true },
-    { id: playerId, username: playerName, score: 0, isHost: false, role: 'guesser', isReady: true },
-    { id: "p3", username: "Neon Shadow", score: 0, isHost: false, role: 'guesser', isReady: true },
+    {
+      id: "p1",
+      username: "Agent 007",
+      score: 0,
+      isHost: true,
+      role: "searcher",
+      isReady: true,
+    },
+    {
+      id: playerId,
+      username: playerName,
+      score: 0,
+      isHost: false,
+      role: "guesser",
+      isReady: true,
+    },
+    {
+      id: "p3",
+      username: "Neon Shadow",
+      score: 0,
+      isHost: false,
+      role: "guesser",
+      isReady: true,
+    },
   ]);
 
   // Get game state from location state or use defaults
@@ -66,41 +113,65 @@ const GuesserActive = () => {
         {
           source: "wikipedia.org",
           title: "The █████ █████ was a historic event",
-          snippet: "In July 1969, the world witnessed a historic moment when █████ became the first person to walk on the █████...",
+          snippet:
+            "In July 1969, the world witnessed a historic moment when █████ became the first person to walk on the █████...",
         },
         {
           source: "history.com",
           title: "█████ Program Achievement",
-          snippet: "The ambitious program achieved its goal when █████ said 'That's one small step for man, one giant leap for mankind'...",
+          snippet:
+            "The ambitious program achieved its goal when █████ said 'That's one small step for man, one giant leap for mankind'...",
         },
         {
           source: "space.com",
           title: "One Small Step for Mankind",
-          snippet: "The Eagle has landed at Tranquility Base, marking humanity's greatest achievement in exploration...",
+          snippet:
+            "The Eagle has landed at Tranquility Base, marking humanity's greatest achievement in exploration...",
         },
       ]);
     }
   }, [location.state]);
 
+  // Redirect if no lobbyId found
+  useEffect(() => {
+    if (!lobbyId) {
+      toast.error("No active game found. Please join or create a lobby.");
+      navigate("/");
+    }
+  }, [lobbyId, navigate]);
+
+  // Return early if no lobbyId (after all hooks)
+  if (!lobbyId) {
+    return null;
+  }
+
   // Extract clues from redacted results (simple extraction for demo)
   const extractedClues: ExtractedClue[] = [];
   redactedResults.forEach((result) => {
     const text = `${result.title} ${result.snippet}`;
-    
+
     // Extract dates (4-digit years)
     const yearMatch = text.match(/\b(19|20)\d{2}\b/);
-    if (yearMatch && !extractedClues.find(c => c.type === "date" && c.value === yearMatch[0])) {
+    if (
+      yearMatch &&
+      !extractedClues.find((c) => c.type === "date" && c.value === yearMatch[0])
+    ) {
       extractedClues.push({
         type: "date",
         value: yearMatch[0],
         icon: <Calendar className="w-4 h-4" />,
       });
     }
-    
+
     // Extract locations (capitalized words that might be places)
     const locationMatch = text.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b/);
-    if (locationMatch && locationMatch[0].length > 3 && 
-        !extractedClues.find(c => c.type === "location" && c.value === locationMatch[0])) {
+    if (
+      locationMatch &&
+      locationMatch[0].length > 3 &&
+      !extractedClues.find(
+        (c) => c.type === "location" && c.value === locationMatch[0],
+      )
+    ) {
       extractedClues.push({
         type: "location",
         value: locationMatch[0],
@@ -114,8 +185,16 @@ const GuesserActive = () => {
     extractedClues.push(
       { type: "date", value: "1969", icon: <Calendar className="w-4 h-4" /> },
       { type: "person", value: "NASA", icon: <User className="w-4 h-4" /> },
-      { type: "location", value: "Tranquility Base", icon: <MapPin className="w-4 h-4" /> },
-      { type: "quote", value: "Eagle has landed", icon: <MessageSquare className="w-4 h-4" /> }
+      {
+        type: "location",
+        value: "Tranquility Base",
+        icon: <MapPin className="w-4 h-4" />,
+      },
+      {
+        type: "quote",
+        value: "Eagle has landed",
+        icon: <MessageSquare className="w-4 h-4" />,
+      },
     );
   }
 
@@ -130,13 +209,13 @@ const GuesserActive = () => {
       return;
     }
 
-    setGuessHistory(prev => [...prev, guess]);
+    setGuessHistory((prev) => [...prev, guess]);
     setIsSubmitting(true);
 
     try {
       // In a real app, this would submit to backend API
       // For now, simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // Check if guess is correct (this would come from backend)
       // For demo, we'll navigate to results
@@ -174,7 +253,7 @@ const GuesserActive = () => {
     <div className="min-h-screen scanlines">
       <Background />
       <Header />
-      
+
       {/* Leave Game Button */}
       <div className="fixed top-24 left-4 z-50">
         <LeaveGameButton />
@@ -188,11 +267,22 @@ const GuesserActive = () => {
               ROUND <span className="text-primary">{round}</span>/{totalRounds}
             </div>
             <div className="font-mono text-sm text-muted-foreground">
-              ATTEMPTS: <span className="text-primary">{attemptsRemaining}</span>/{maxAttempts}
+              ATTEMPTS:{" "}
+              <span className="text-primary">{attemptsRemaining}</span>/
+              {maxAttempts}
             </div>
           </div>
-          <Timer seconds={timeLimit} onComplete={handleTimeUp} size="md" />
-          <ClassifiedStamp type="classified" className="text-xs" animate={false} />
+          <Timer
+            lobbyId={lobbyId}
+            initialSeconds={timeLimit}
+            onComplete={handleTimeUp}
+            size="md"
+          />
+          <ClassifiedStamp
+            type="classified"
+            className="text-xs"
+            animate={false}
+          />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-7xl mx-auto">
@@ -205,7 +295,9 @@ const GuesserActive = () => {
               className="flex items-center gap-3"
             >
               <FileText className="w-6 h-6 text-primary" />
-              <h2 className="font-mono text-lg font-bold text-foreground">CLASSIFIED DOCUMENT</h2>
+              <h2 className="font-mono text-lg font-bold text-foreground">
+                CLASSIFIED DOCUMENT
+              </h2>
             </motion.div>
 
             {/* Redacted Results */}
@@ -245,7 +337,7 @@ const GuesserActive = () => {
                 disabled={attemptsRemaining <= 0 || isSubmitting}
                 type="guess"
               />
-              
+
               <GlowButton
                 onClick={handleRequestHint}
                 variant="secondary"
@@ -264,10 +356,15 @@ const GuesserActive = () => {
                 animate={{ opacity: 1 }}
                 className="bg-destructive/10 border border-destructive/30 rounded-lg p-4"
               >
-                <p className="font-mono text-sm text-destructive font-bold mb-2">PREVIOUS ATTEMPTS:</p>
+                <p className="font-mono text-sm text-destructive font-bold mb-2">
+                  PREVIOUS ATTEMPTS:
+                </p>
                 <ul className="space-y-1">
                   {guessHistory.map((guess, index) => (
-                    <li key={index} className="font-mono text-sm text-destructive/70 line-through">
+                    <li
+                      key={index}
+                      className="font-mono text-sm text-destructive/70 line-through"
+                    >
                       {guess}
                     </li>
                   ))}
@@ -278,22 +375,21 @@ const GuesserActive = () => {
 
           {/* Sidebar (4 cols) */}
           <div className="lg:col-span-4 space-y-4 h-full flex flex-col">
-          
-             {/* Player Leaderboard */}
-             <PlayerLeaderboard 
-                players={players} 
-                currentPlayerId={playerId} 
-                className="flex-shrink-0"
-             />
+            {/* Player Leaderboard */}
+            <PlayerLeaderboard
+              players={players}
+              currentPlayerId={playerId}
+              className="flex-shrink-0"
+            />
 
-             {/* Chat Panel */}
-             <ChatPanel 
-                lobbyId={lobbyId} 
-                playerId={playerId} 
-                className="flex-shrink-0"
-             />
+            {/* Chat Panel */}
+            <ChatPanel
+              lobbyId={lobbyId}
+              playerId={playerId}
+              className="flex-shrink-0"
+            />
 
-             {/* Extracted Intel */}
+            {/* Extracted Intel */}
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -302,9 +398,11 @@ const GuesserActive = () => {
             >
               <div className="flex items-center gap-2 mb-4">
                 <BarChart3 className="w-4 h-4 text-accent" />
-                <span className="font-mono text-sm font-bold">EXTRACTED INTEL</span>
+                <span className="font-mono text-sm font-bold">
+                  EXTRACTED INTEL
+                </span>
               </div>
-              
+
               <div className="space-y-3">
                 {extractedClues.map((clue, index) => (
                   <motion.div
@@ -315,25 +413,27 @@ const GuesserActive = () => {
                     className="flex items-center gap-2 p-2 bg-secondary/30 rounded border border-border/50"
                   >
                     <div className="text-primary">{clue.icon}</div>
-                    <span className="font-mono text-xs text-foreground">{clue.value}</span>
+                    <span className="font-mono text-xs text-foreground">
+                      {clue.value}
+                    </span>
                   </motion.div>
                 ))}
               </div>
 
               <div className="mt-4 pt-4 border-t border-border">
                 <p className="font-mono text-xs text-muted-foreground">
-                  Clues are automatically extracted from visible text. Use them to form your hypothesis.
+                  Clues are automatically extracted from visible text. Use them
+                  to form your hypothesis.
                 </p>
               </div>
             </motion.div>
 
-             {/* Emote Panel */}
-             <EmotePanel 
-                lobbyId={lobbyId} 
-                playerId={playerId} 
-                className="flex-shrink-0"
-             />
-
+            {/* Emote Panel */}
+            <EmotePanel
+              lobbyId={lobbyId}
+              playerId={playerId}
+              className="flex-shrink-0"
+            />
           </div>
         </div>
       </div>

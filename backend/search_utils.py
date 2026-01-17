@@ -20,15 +20,16 @@ except ImportError:
     print("Warning: google-api-python-client not installed. Google Search will not work.")
 
 try:
-    import google.genai as genai
+    from google import genai
     if GEMINI_API_KEY:
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-pro')
+        client = genai.Client(api_key=GEMINI_API_KEY)
+    else:
+        client = None
     GEMINI_AVAILABLE = GEMINI_API_KEY is not None
 except ImportError:
     GEMINI_AVAILABLE = False
-    model = None
-    print("Warning: google-generativeai not installed. Gemini redaction will not work.")
+    client = None
+    print("Warning: google-genai not installed. Gemini redaction will not work.")
 
 
 def google_search(search_term, num_results=5):
@@ -72,7 +73,7 @@ def redact_with_gemini(search_results, forbidden_words, search_query, secret_top
     Use Gemini to intelligently redact search results
     Returns redacted results with redaction blocks
     """
-    if not GEMINI_AVAILABLE or not model:
+    if not GEMINI_AVAILABLE or not client:
         return simple_redaction(search_results, forbidden_words, search_query)
 
     # Prepare the prompt for Gemini
@@ -108,7 +109,10 @@ Important: Use exactly [REDACTED] for each redaction. Be strategic - leave enoug
 """
 
     try:
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt
+        )
         redacted_text = response.text
 
         # Extract JSON from response (handle markdown code blocks)

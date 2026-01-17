@@ -5,7 +5,10 @@ import { Header } from "@/components/layout/Header";
 import { Background } from "@/components/layout/Background";
 import { Timer } from "@/components/ui/Timer";
 import { TerminalInput } from "@/components/ui/TerminalInput";
-import { SearchResult, SearchResultSkeleton } from "@/components/ui/SearchResult";
+import {
+  SearchResult,
+  SearchResultSkeleton,
+} from "@/components/ui/SearchResult";
 import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
 import { ChatPanel } from "@/components/ui/ChatPanel";
 import { PlayerLeaderboard } from "@/components/ui/PlayerLeaderboard";
@@ -13,9 +16,18 @@ import { LeaveGameButton } from "@/components/ui/LeaveGameButton";
 import { EmotePanel } from "@/components/ui/EmotePanel";
 import { X, Search, Lightbulb, Send } from "lucide-react";
 import { GlowButton } from "@/components/ui/GlowButton";
-import { search, validateQuery, getRandomTopic, type SearchResponse } from "@/lib/api";
+import {
+  search,
+  validateQuery,
+  getRandomTopic,
+  type SearchResponse,
+} from "@/lib/api";
 import { toast } from "sonner";
-import { getOrCreatePlayerId, getOrCreatePlayerName, type Player } from "@/lib/playerUtils";
+import {
+  getOrCreatePlayerId,
+  getOrCreatePlayerName,
+  type Player,
+} from "@/lib/playerUtils";
 
 interface SearchResultData {
   source: string;
@@ -39,28 +51,70 @@ const SearcherActive = () => {
   const [currentResults, setCurrentResults] = useState<SearchResultData[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
-  const [selectedQueryIndex, setSelectedQueryIndex] = useState<number | null>(null);
-  
+  const [selectedQueryIndex, setSelectedQueryIndex] = useState<number | null>(
+    null,
+  );
+
   // Game state
   const playerId = getOrCreatePlayerId();
   const playerName = getOrCreatePlayerName();
-  
-  // Mock lobby data (replace with actual websocket data later)
-  const lobbyId = (location.state as any)?.lobbyId || "demo-lobby";
+
+  // Get lobbyId from location state or fallback to current_lobby_settings
+  const getLobbyId = (): string | null => {
+    const stateId = (location.state as any)?.lobbyId;
+    if (stateId) return stateId;
+
+    const settings = localStorage.getItem("current_lobby_settings");
+    if (settings) {
+      const parsed = JSON.parse(settings);
+      return parsed.lobbyId || null;
+    }
+    return null;
+  };
+
+  const lobbyId = getLobbyId();
+
   const [players, setPlayers] = useState<Player[]>([
-    { id: playerId, username: playerName, score: 0, isHost: true, role: 'searcher', isReady: true },
-    { id: "p2", username: "Agent Cipher", score: 0, isHost: false, role: 'guesser', isReady: true },
-    { id: "p3", username: "Neon Shadow", score: 0, isHost: false, role: 'guesser', isReady: true },
+    {
+      id: playerId,
+      username: playerName,
+      score: 0,
+      isHost: true,
+      role: "searcher",
+      isReady: true,
+    },
+    {
+      id: "p2",
+      username: "Agent Cipher",
+      score: 0,
+      isHost: false,
+      role: "guesser",
+      isReady: true,
+    },
+    {
+      id: "p3",
+      username: "Neon Shadow",
+      score: 0,
+      isHost: false,
+      role: "guesser",
+      isReady: true,
+    },
   ]);
 
   // Get game state from location state or use defaults
   const secretTopic = (location.state as any)?.secretTopic || "Moon Landing";
-  const forbiddenWords = (location.state as any)?.forbiddenWords || ["moon", "apollo", "armstrong", "nasa", "space"];
+  const forbiddenWords = (location.state as any)?.forbiddenWords || [
+    "moon",
+    "apollo",
+    "armstrong",
+    "nasa",
+    "space",
+  ];
   const round = (location.state as any)?.round || 1;
   const totalRounds = (location.state as any)?.totalRounds || 5;
   const timeLimit = (location.state as any)?.timeLimit || 120;
   const maxSearches = (location.state as any)?.maxSearches || 3;
-  
+
   // Handle pregenerated initial search if provided
   const initialSearchResults = (location.state as any)?.initialSearchResults;
 
@@ -69,14 +123,16 @@ const SearcherActive = () => {
   useEffect(() => {
     // If we have initial search results passed from topic selection, perform a "silent" search
     if (initialSearchResults && searchHistory.length === 0) {
-       const transformedResults = initialSearchResults.map((r: any, i: number) => ({
-        source: new URL(r.url).hostname,
-        title: r.title,
-        snippet: r.snippet,
-        confidence: 90 - i * 5,
-        link: r.url,
-      }));
-      
+      const transformedResults = initialSearchResults.map(
+        (r: any, i: number) => ({
+          source: new URL(r.url).hostname,
+          title: r.title,
+          snippet: r.snippet,
+          confidence: 90 - i * 5,
+          link: r.url,
+        }),
+      );
+
       setCurrentResults(transformedResults);
       setShowResults(true);
       // Don't add to history or decrease search count for the initial auto-search?
@@ -87,13 +143,28 @@ const SearcherActive = () => {
   // If no topic provided, fetch one
   useEffect(() => {
     if (!location.state?.secretTopic && !initialSearchResults) {
-      getRandomTopic().then((topicData) => {
-        // Store in location state or use it directly
-      }).catch((error) => {
-        console.error("Failed to get topic:", error);
-      });
+      getRandomTopic()
+        .then((topicData) => {
+          // Store in location state or use it directly
+        })
+        .catch((error) => {
+          console.error("Failed to get topic:", error);
+        });
     }
   }, []);
+
+  // Redirect if no lobbyId found
+  useEffect(() => {
+    if (!lobbyId) {
+      toast.error("No active game found. Please join or create a lobby.");
+      navigate("/");
+    }
+  }, [lobbyId, navigate]);
+
+  // Return early if no lobbyId (after all hooks)
+  if (!lobbyId) {
+    return null;
+  }
 
   const handleSearch = async (query: string) => {
     if (searchesRemaining <= 0) {
@@ -121,14 +192,16 @@ const SearcherActive = () => {
       const searchResponse: SearchResponse = await search({ query });
 
       // Transform results to match our UI format
-      const transformedResults: SearchResultData[] = searchResponse.results.map((result, index) => ({
-        source: result.displayLink || new URL(result.link).hostname,
-        title: result.title,
-        snippet: result.snippet,
-        confidence: 85 - index * 5, // Mock confidence based on order
-        link: result.link,
-        displayLink: result.displayLink,
-      }));
+      const transformedResults: SearchResultData[] = searchResponse.results.map(
+        (result, index) => ({
+          source: result.displayLink || new URL(result.link).hostname,
+          title: result.title,
+          snippet: result.snippet,
+          confidence: 85 - index * 5, // Mock confidence based on order
+          link: result.link,
+          displayLink: result.displayLink,
+        }),
+      );
 
       // Add to search history
       const historyItem: SearchHistoryItem = {
@@ -137,7 +210,7 @@ const SearcherActive = () => {
         timestamp: Date.now(),
       };
 
-      setSearchHistory(prev => [...prev, historyItem]);
+      setSearchHistory((prev) => [...prev, historyItem]);
       setCurrentResults(transformedResults);
       setIsSearching(false);
       setShowResults(true);
@@ -151,30 +224,30 @@ const SearcherActive = () => {
 
   const handleSubmitToGuesser = () => {
     if (selectedQueryIndex === null && !initialSearchResults) {
-       // if no search made yet, cant submit
-       if (searchHistory.length === 0) {
-          toast.error("Make a search first!");
-          return;
-       }
+      // if no search made yet, cant submit
+      if (searchHistory.length === 0) {
+        toast.error("Make a search first!");
+        return;
+      }
     }
-    
+
     // Determine what to send: either selected history item OR current results (if initial)
     let selectedResults = currentResults;
     let selectedQuery = "Initial Intelligence";
-    
+
     if (selectedQueryIndex !== null && searchHistory[selectedQueryIndex]) {
-       selectedResults = searchHistory[selectedQueryIndex].results;
-       selectedQuery = searchHistory[selectedQueryIndex].query;
+      selectedResults = searchHistory[selectedQueryIndex].results;
+      selectedQuery = searchHistory[selectedQueryIndex].query;
     } else if (initialSearchResults && searchHistory.length === 0) {
-       // sending initial results
+      // sending initial results
     } else {
-       toast.error("Please select a search result to send");
-       return;
+      toast.error("Please select a search result to send");
+      return;
     }
 
     // In a real app, this would send results to the backend/guesser via WebSocket
     // For now, navigate to round result
-    
+
     // Store the selected search in location state for the next screen
     navigate("/game/round-result", {
       state: {
@@ -190,14 +263,14 @@ const SearcherActive = () => {
     // Auto-submit the last search if available
     let lastQuery = "Time Expired";
     let lastResults: SearchResultData[] = [];
-    
+
     if (searchHistory.length > 0) {
-       const last = searchHistory[searchHistory.length - 1];
-       lastQuery = last.query;
-       lastResults = last.results;
+      const last = searchHistory[searchHistory.length - 1];
+      lastQuery = last.query;
+      lastResults = last.results;
     } else if (initialSearchResults) {
-       // use initial
-       lastQuery = "Initial Intelligence";
+      // use initial
+      lastQuery = "Initial Intelligence";
     }
 
     navigate("/game/round-result", {
@@ -220,7 +293,7 @@ const SearcherActive = () => {
     <div className="min-h-screen scanlines">
       <Background />
       <Header />
-      
+
       {/* Leave Game Button */}
       <div className="fixed top-24 left-4 z-50">
         <LeaveGameButton />
@@ -234,11 +307,21 @@ const SearcherActive = () => {
               ROUND <span className="text-primary">{round}</span>/{totalRounds}
             </div>
             <div className="font-mono text-sm text-muted-foreground">
-              SEARCHES: <span className="text-primary">{searchesRemaining}</span>
+              SEARCHES:{" "}
+              <span className="text-primary">{searchesRemaining}</span>
             </div>
           </div>
-          <Timer seconds={timeLimit} onComplete={handleTimeUp} size="md" />
-          <ClassifiedStamp type="classified" className="text-xs" animate={false} />
+          <Timer
+            lobbyId={lobbyId}
+            initialSeconds={timeLimit}
+            onComplete={handleTimeUp}
+            size="md"
+          />
+          <ClassifiedStamp
+            type="classified"
+            className="text-xs"
+            animate={false}
+          />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-7xl mx-auto">
@@ -251,8 +334,12 @@ const SearcherActive = () => {
               className="bg-card border border-border rounded-lg p-4"
             >
               <div className="text-center">
-                <p className="font-mono text-xs text-muted-foreground mb-1">YOUR SECRET TOPIC</p>
-                <h2 className="text-2xl font-bold text-primary text-glow-cyan">{secretTopic}</h2>
+                <p className="font-mono text-xs text-muted-foreground mb-1">
+                  YOUR SECRET TOPIC
+                </p>
+                <h2 className="text-2xl font-bold text-primary text-glow-cyan">
+                  {secretTopic}
+                </h2>
               </div>
             </motion.div>
 
@@ -264,7 +351,9 @@ const SearcherActive = () => {
               className="bg-destructive/10 border border-destructive/30 rounded-lg p-4"
             >
               <div className="flex items-center gap-2 mb-3">
-                <span className="font-mono text-sm text-destructive font-bold">⚠️ FORBIDDEN WORDS</span>
+                <span className="font-mono text-sm text-destructive font-bold">
+                  ⚠️ FORBIDDEN WORDS
+                </span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {forbiddenWords.map((word) => (
@@ -317,7 +406,7 @@ const SearcherActive = () => {
                   className="space-y-4"
                 >
                   <div className="text-center font-mono text-sm text-primary mb-4">
-                    {selectedQueryIndex !== null 
+                    {selectedQueryIndex !== null
                       ? `SELECTED QUERY: "${searchHistory[selectedQueryIndex].query}"`
                       : "SEARCH RESULTS"}
                   </div>
@@ -331,7 +420,7 @@ const SearcherActive = () => {
                       delay={index * 0.1}
                     />
                   ))}
-                  
+
                   <GlowButton
                     onClick={handleSubmitToGuesser}
                     variant="primary"
@@ -341,7 +430,6 @@ const SearcherActive = () => {
                   >
                     Send to Guesser
                   </GlowButton>
-                  
                 </motion.div>
               )}
             </div>
@@ -349,36 +437,37 @@ const SearcherActive = () => {
 
           {/* Sidebar (4 cols) */}
           <div className="lg:col-span-4 space-y-4 h-full flex flex-col">
-          
-             {/* Player Leaderboard */}
-             <PlayerLeaderboard 
-                players={players} 
-                currentPlayerId={playerId} 
-                className="flex-shrink-0"
-             />
+            {/* Player Leaderboard */}
+            <PlayerLeaderboard
+              players={players}
+              currentPlayerId={playerId}
+              className="flex-shrink-0"
+            />
 
-             {/* Chat Panel */}
-             <ChatPanel 
-                lobbyId={lobbyId} 
-                playerId={playerId} 
-                className="flex-shrink-0"
-             />
+            {/* Chat Panel */}
+            <ChatPanel
+              lobbyId={lobbyId}
+              playerId={playerId}
+              className="flex-shrink-0"
+            />
 
-             {/* Guesser Guesses Section (New) */}
-             <div className="bg-card border border-border rounded-lg p-4 flex-1 min-h-[150px]">
-                <div className="flex items-center gap-2 mb-3">
-                   <Lightbulb className="w-4 h-4 text-yellow-500" />
-                   <span className="font-mono text-sm font-bold">INCOMING INTEL</span>
-                </div>
-                <div className="space-y-2">
-                   {/* Placeholder for incoming guesses */}
-                   <p className="font-mono text-xs text-muted-foreground italic text-center py-4">
-                      Awaiting guesses from field agents...
-                   </p>
-                </div>
-             </div>
+            {/* Guesser Guesses Section (New) */}
+            <div className="bg-card border border-border rounded-lg p-4 flex-1 min-h-[150px]">
+              <div className="flex items-center gap-2 mb-3">
+                <Lightbulb className="w-4 h-4 text-yellow-500" />
+                <span className="font-mono text-sm font-bold">
+                  INCOMING INTEL
+                </span>
+              </div>
+              <div className="space-y-2">
+                {/* Placeholder for incoming guesses */}
+                <p className="font-mono text-xs text-muted-foreground italic text-center py-4">
+                  Awaiting guesses from field agents...
+                </p>
+              </div>
+            </div>
 
-             {/* Search History */}
+            {/* Search History */}
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -387,10 +476,14 @@ const SearcherActive = () => {
             >
               <div className="flex items-center gap-2 mb-3">
                 <Search className="w-4 h-4 text-primary" />
-                <span className="font-mono text-sm font-bold">SEARCH HISTORY</span>
+                <span className="font-mono text-sm font-bold">
+                  SEARCH HISTORY
+                </span>
               </div>
               {searchHistory.length === 0 ? (
-                <p className="font-mono text-xs text-muted-foreground">No searches yet...</p>
+                <p className="font-mono text-xs text-muted-foreground">
+                  No searches yet...
+                </p>
               ) : (
                 <ul className="space-y-2">
                   {searchHistory.map((item, index) => (
@@ -399,8 +492,8 @@ const SearcherActive = () => {
                       onClick={() => handleSelectQuery(index)}
                       className={`font-mono text-xs cursor-pointer p-2 rounded transition-colors ${
                         selectedQueryIndex === index
-                          ? 'bg-primary/20 text-primary border border-primary/50'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'
+                          ? "bg-primary/20 text-primary border border-primary/50"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
                       }`}
                     >
                       {index + 1}. {item.query}
@@ -413,13 +506,12 @@ const SearcherActive = () => {
               )}
             </motion.div>
 
-             {/* Emote Panel */}
-             <EmotePanel 
-                lobbyId={lobbyId} 
-                playerId={playerId} 
-                className="flex-shrink-0"
-             />
-
+            {/* Emote Panel */}
+            <EmotePanel
+              lobbyId={lobbyId}
+              playerId={playerId}
+              className="flex-shrink-0"
+            />
           </div>
         </div>
       </div>

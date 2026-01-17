@@ -306,3 +306,100 @@ export async function healthCheck(): Promise<{
 
   return response.json();
 }
+
+// Round Management APIs
+
+export interface SelectTopicRequest {
+  lobbyId: string;
+  userId: string;
+  topic: string;
+  forbiddenWords: string[];
+  roundNumber: number;
+  timeLimit: number;
+}
+
+export interface SelectTopicResponse {
+  roundState: any;
+  initialResults: Array<{
+    title: string;
+    snippet: string;
+    link: string;
+    displayLink: string;
+  }>;
+  redactedResults: Array<{
+    title: string;
+    snippet: string;
+    link: string;
+    displayLink: string;
+  }>;
+  message: string;
+}
+
+export interface SendResultRequest {
+  lobbyId: string;
+  userId: string;
+  query: string;
+  results: any[];
+}
+
+export interface SendResultResponse {
+  success: boolean;
+  cooldownRemaining: number;
+  message: string;
+}
+
+export interface RoundStateResponse {
+  roundState: any;
+  timeRemaining: number;
+  cooldownRemaining: number;
+}
+
+export async function selectTopic(
+  data: SelectTopicRequest,
+): Promise<SelectTopicResponse> {
+  const response = await fetch(`${API_BASE}/api/round/select-topic`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error?.error || "Failed to select topic");
+  }
+
+  return response.json();
+}
+
+export async function sendResult(
+  data: SendResultRequest,
+): Promise<SendResultResponse> {
+  const response = await fetch(`${API_BASE}/api/round/send-result`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error?.error || "Failed to send result");
+  }
+
+  return response.json();
+}
+
+export async function getRoundState(
+  lobbyId: string,
+): Promise<RoundStateResponse> {
+  const response = await fetch(`${API_BASE}/api/round/state/${lobbyId}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error?.error || "Failed to get round state");
+  }
+
+  return response.json();
+}

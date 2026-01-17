@@ -144,6 +144,20 @@ const Lobby = () => {
         lobbyIdRef.current = lobbyId;
         setLobby(lobbyData.lobby);
 
+        // Store lobbyId in current_lobby_settings for persistence
+        const existingSettings = localStorage.getItem("current_lobby_settings");
+        const parsedSettings = existingSettings
+          ? JSON.parse(existingSettings)
+          : {};
+        localStorage.setItem(
+          "current_lobby_settings",
+          JSON.stringify({
+            ...parsedSettings,
+            lobbyId,
+            lobbyCode: code,
+          }),
+        );
+
         // Connect to WebSocket and join lobby room
         if (socket.connected) {
           socket.emit("lobby:join", {
@@ -224,12 +238,28 @@ const Lobby = () => {
       console.log("Game started event received:", data);
       // Find current player's role
       const myPlayer = data.players.find((p) => p.playerId === playerId);
+
+      // Get lobbyId from current_lobby_settings
+      const settings = localStorage.getItem("current_lobby_settings");
+      const actualLobbyId =
+        lobbyIdRef.current || (settings ? JSON.parse(settings).lobbyId : null);
+
       if (myPlayer?.role) {
         // Navigate based on role
         if (myPlayer.role === "searcher") {
-          navigate("/game/searcher-briefing");
+          navigate("/game/searcher-briefing", {
+            state: {
+              lobbyId: actualLobbyId,
+              gameConfig: data.gameConfig,
+            },
+          });
         } else if (myPlayer.role === "guesser") {
-          navigate("/game/guesser-active");
+          navigate("/game/guesser-active", {
+            state: {
+              lobbyId: actualLobbyId,
+              gameConfig: data.gameConfig,
+            },
+          });
         }
       }
     };
@@ -326,10 +356,26 @@ const Lobby = () => {
       // Navigate to role assignment or game screen
       // The backend assigns roles, so we can navigate based on the player's role
       const myPlayer = result.players.find((p) => p.playerId === playerId);
+
+      // Get lobbyId from current_lobby_settings
+      const settings = localStorage.getItem("current_lobby_settings");
+      const actualLobbyId =
+        lobbyIdRef.current || (settings ? JSON.parse(settings).lobbyId : null);
+
       if (myPlayer?.role === "searcher") {
-        navigate("/game/searcher-briefing");
+        navigate("/game/searcher-briefing", {
+          state: {
+            lobbyId: actualLobbyId,
+            gameConfig: result.gameConfig,
+          },
+        });
       } else if (myPlayer?.role === "guesser") {
-        navigate("/game/guesser-active");
+        navigate("/game/guesser-active", {
+          state: {
+            lobbyId: actualLobbyId,
+            gameConfig: result.gameConfig,
+          },
+        });
       } else {
         navigate(`/lobby/${code}/assign-roles`);
       }

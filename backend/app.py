@@ -6,6 +6,8 @@ import random
 from datetime import datetime
 from flask_socketio import SocketIO, join_room, leave_room, emit
 from typing import List
+import time
+import threading
 
 # Import shared utility functions
 from search_utils import (
@@ -32,6 +34,9 @@ socket_user_map = {}     # sid -> userId
 
 # Map lobbyCode to lobbyId for quick lookup
 lobby_code_map = {}
+
+# Track active timer threads
+active_timer_threads = {}
 
 # Helper to generate a 6-char alphanumeric code (upper/lowercase + numbers)
 
@@ -66,6 +71,70 @@ def emit_lobby_state(lobby_id):
         return
     # Broadcast to everyone in the lobby room
     socketio.emit("lobby:state", {"lobby": lobby}, room=lobby_id)
+
+
+def get_current_round_time_remaining(round_state):
+    """Calculate time remaining in current round"""
+    if not round_state or not round_state.get('startTime'):
+        return 0
+
+    elapsed = time.time() - round_state['startTime']
+    remaining = round_state['timeLimit'] - elapsed
+    return max(0, int(remaining))
+
+
+def get_cooldown_remaining(round_state):
+    """Calculate cooldown remaining for next result send"""
+    if not round_state or not round_state.get('lastResultSentAt'):
+        return 0
+
+    elapsed = time.time() - round_state['lastResultSentAt']
+    remaining = round_state['resultCooldown'] - elapsed
+    return max(0, int(remaining))
+
+
+def timer_broadcast_thread(lobby_id):
+    """Background thread that broadcasts timer updates every second"""
+    print(f"[Timer] Started timer thread for lobby {lobby_id}")
+
+    while lobby_id in lobbies:
+        lobby = lobbies.get(lobby_id)
+        if not lobby or not lobby.get('roundState'):
+            break
+
+        round_state = lobby['roundState']
+        if not round_state.get('isActive'):
+            break
+
+        time_remaining = get_current_round_time_remaining(round_state)
+        cooldown_remaining = get_cooldown_remaining(round_state)
+
+        # Broadcast timer sync
+        socketio.emit('round:timer_sync', {
+            'timeRemaining': time_remaining,
+            'cooldownRemaining': cooldown_remaining,
+            'roundNumber': round_state.get('roundNumber', 1)
+        }, room=lobby_id)
+
+        # Check if round should end
+        if time_remaining <= 0:
+            round_state['isActive'] = False
+            socketio.emit('round:ended', {
+                'reason': 'time_expired',
+                'roundNumber': round_state.get('roundNumber', 1)
+            }, room=lobby_id)
+            print(f"[Timer] Round ended for lobby {lobby_id}")
+            break
+
+        time.sleep(1)
+
+    # Clean up thread reference
+    if lobby_id in active_timer_threads:
+        del active_timer_threads[lobby_id]
+
+    print(f"[Timer] Timer thread stopped for lobby {lobby_id}")
+
+
 # socket event handlers
 
 
@@ -282,7 +351,8 @@ def create_lobby():
         'players': [],  # Empty initially - host will join via join-lobby
         'status': 'waiting',  # waiting, in_game, finished
         'gameConfig': None,
-        'gameId': None
+        'gameId': None,
+        'roundState': None  # Will be initialized when round starts
     }
     lobbies[lobby_id] = lobby
     lobby_code_map[lobby_code] = lobby_id
@@ -528,6 +598,241 @@ def get_lobby_by_code(lobby_code):
         return jsonify({'error': 'Lobby not found'}), 404
 
     return jsonify({'lobby': lobbies[lobby_id]}), 200
+
+
+# ============ Round Management Endpoints ============
+
+@app.route('/api/round/select-topic', methods=['POST'])
+def select_topic():
+    """
+    Searcher selects a topic and starts the round with automatic initial search
+    Request: {
+        "lobbyId": str,
+        "userId": str,
+        "topic": str,
+        "forbiddenWords": [str],
+        "roundNumber": int,
+        "timeLimit": int (seconds)
+    }
+    Response: {
+        "roundState": {...},
+        "initialResults": [...] (for searcher),
+        "redactedResults": [...] (for guessers)
+    }
+    """
+    data = request.json
+    lobby_id = data.get('lobbyId')
+    user_id = data.get('userId')
+    topic = data.get('topic')
+    forbidden_words = data.get('forbiddenWords', [])
+    round_number = data.get('roundNumber', 1)
+    time_limit = data.get('timeLimit', 120)
+
+    if not all([lobby_id, user_id, topic, forbidden_words]):
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    if lobby_id not in lobbies:
+        return jsonify({'error': 'Lobby not found'}), 404
+
+    lobby = lobbies[lobby_id]
+
+    # Verify user is the searcher
+    searcher = None
+    for player in lobby['players']:
+        if player['playerId'] == user_id and player['role'] == 'searcher':
+            searcher = player
+            break
+
+    if not searcher:
+        return jsonify({'error': 'Only the searcher can select a topic'}), 403
+
+    # Perform automatic initial search
+    initial_query = topic  # Search for the topic itself
+    initial_results = google_search(initial_query)
+
+    # Redact results for guessers
+    redacted_results = redact_with_gemini(
+        initial_results, forbidden_words, initial_query, topic)
+
+    # Initialize round state
+    current_time = time.time()
+    lobby['roundState'] = {
+        'roundNumber': round_number,
+        'startTime': current_time,
+        'endTime': current_time + time_limit,
+        'timeLimit': time_limit,
+        'topic': topic,
+        'forbiddenWords': forbidden_words,
+        'searcherReady': True,
+        'lastResultSentAt': current_time,  # Initial result counts as first send
+        'resultCooldown': 30,
+        'initialResultSent': True,
+        'isActive': True
+    }
+
+    # Start timer broadcast thread
+    if lobby_id not in active_timer_threads:
+        timer_thread = threading.Thread(
+            target=timer_broadcast_thread, args=(lobby_id,), daemon=True)
+        timer_thread.start()
+        active_timer_threads[lobby_id] = timer_thread
+
+    # Broadcast round started to all players
+    socketio.emit('round:started', {
+        'roundNumber': round_number,
+        'topic': topic,
+        'timeLimit': time_limit,
+        'roundState': lobby['roundState']
+    }, room=lobby_id)
+
+    # Send initial results to searcher
+    searcher_sid = user_socket_map.get(user_id)
+    if searcher_sid:
+        socketio.emit('round:initial_results', {
+            'results': initial_results,
+            'query': initial_query
+        }, room=searcher_sid)
+
+    # Send redacted results to guessers
+    for player in lobby['players']:
+        if player['role'] == 'guesser':
+            guesser_sid = user_socket_map.get(player['playerId'])
+            if guesser_sid:
+                socketio.emit('round:redacted_results', {
+                    'results': redacted_results
+                }, room=guesser_sid)
+
+    print(
+        f"[Round] Started round {round_number} for lobby {lobby_id} with topic: {topic}")
+
+    return jsonify({
+        'roundState': lobby['roundState'],
+        'initialResults': initial_results,
+        'redactedResults': redacted_results,
+        'message': 'Round started successfully'
+    }), 200
+
+
+@app.route('/api/round/send-result', methods=['POST'])
+def send_result():
+    """
+    Searcher sends a search result to guessers (30-second cooldown enforced)
+    Request: {
+        "lobbyId": str,
+        "userId": str,
+        "query": str,
+        "results": [...]
+    }
+    Response: { "success": bool, "cooldownRemaining": int }
+    """
+    data = request.json
+    lobby_id = data.get('lobbyId')
+    user_id = data.get('userId')
+    query = data.get('query')
+    results = data.get('results', [])
+
+    if not all([lobby_id, user_id, query]):
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    if lobby_id not in lobbies:
+        return jsonify({'error': 'Lobby not found'}), 404
+
+    lobby = lobbies[lobby_id]
+    round_state = lobby.get('roundState')
+
+    if not round_state or not round_state.get('isActive'):
+        return jsonify({'error': 'No active round'}), 400
+
+    # Verify user is the searcher
+    is_searcher = False
+    for player in lobby['players']:
+        if player['playerId'] == user_id and player['role'] == 'searcher':
+            is_searcher = True
+            break
+
+    if not is_searcher:
+        return jsonify({'error': 'Only the searcher can send results'}), 403
+
+    # Check cooldown
+    cooldown_remaining = get_cooldown_remaining(round_state)
+    if cooldown_remaining > 0:
+        return jsonify({
+            'error': f'Cooldown active. Wait {cooldown_remaining} seconds',
+            'cooldownRemaining': cooldown_remaining
+        }), 429
+
+    # Redact results for guessers
+    redacted_results = redact_with_gemini(
+        results,
+        round_state['forbiddenWords'],
+        query,
+        round_state['topic']
+    )
+
+    # Update cooldown timestamp
+    round_state['lastResultSentAt'] = time.time()
+
+    # Send redacted results to guessers
+    for player in lobby['players']:
+        if player['role'] == 'guesser':
+            guesser_sid = user_socket_map.get(player['playerId'])
+            if guesser_sid:
+                socketio.emit('round:new_result', {
+                    'results': redacted_results,
+                    'timestamp': time.time()
+                }, room=guesser_sid)
+
+    # Notify searcher of successful send and start cooldown
+    searcher_sid = user_socket_map.get(user_id)
+    if searcher_sid:
+        socketio.emit('round:result_sent_confirmation', {
+            'cooldownDuration': round_state['resultCooldown']
+        }, room=searcher_sid)
+
+    print(
+        f"[Round] Searcher sent result to guessers in lobby {lobby_id}, cooldown started")
+
+    return jsonify({
+        'success': True,
+        'cooldownRemaining': round_state['resultCooldown'],
+        'message': 'Result sent to guessers'
+    }), 200
+
+
+@app.route('/api/round/state/<lobby_id>', methods=['GET'])
+def get_round_state(lobby_id):
+    """
+    Get current round state (for reconnections)
+    Response: {
+        "roundState": {...},
+        "timeRemaining": int,
+        "cooldownRemaining": int
+    }
+    """
+    if lobby_id not in lobbies:
+        return jsonify({'error': 'Lobby not found'}), 404
+
+    lobby = lobbies[lobby_id]
+    round_state = lobby.get('roundState')
+
+    if not round_state:
+        # Return success with null round state instead of error
+        # This is normal when round hasn't started yet
+        return jsonify({
+            'roundState': None,
+            'timeRemaining': 0,
+            'cooldownRemaining': 0,
+            'message': 'No active round yet'
+        }), 200
+
+    time_remaining = get_current_round_time_remaining(round_state)
+    cooldown_remaining = get_cooldown_remaining(round_state)
+
+    return jsonify({
+        'roundState': round_state,
+        'timeRemaining': time_remaining,
+        'cooldownRemaining': cooldown_remaining
+    }), 200
 
 
 # ...existing endpoints (search, validate-query, topics, health)...
