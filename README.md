@@ -1,82 +1,126 @@
-## Backend setup
-cd classified-intel-backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
+# REDACTED - Classified Intel Game
 
+A multiplayer word guessing game where one player (the Searcher) searches for clues about a secret topic, while the other player (the Guesser) tries to decode redacted search results to uncover the answer.
 
+## How to Play
 
+1. **Create or Join a Room** - One player creates a room and shares the 6-character code
+2. **Choose Roles** - One player becomes the Searcher, the other becomes the Guesser
+3. **Searcher's Mission** - Search for clues about the secret topic WITHOUT using forbidden words
+4. **Guesser's Mission** - Analyze the redacted search results and guess the secret topic
+5. **Win Condition** - The Guesser correctly identifies the topic, or runs out of guesses
 
-# Welcome to your Lovable project
+## Tech Stack
 
-## Project info
+### Frontend
+- **React 18** with TypeScript
+- **Vite** for fast development
+- **Tailwind CSS** for styling
+- **Framer Motion** for animations
+- **shadcn/ui** component library
+- **React Router** for navigation
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+### Backend
+- **Flask** (Python) REST API
+- **Google Custom Search API** for real search results
+- **Google Gemini AI** for intelligent redaction
+- **Flask-CORS** for cross-origin support
 
-## How can I edit this code?
+## Getting Started
 
-There are several ways of editing your application.
+### Prerequisites
+- Node.js 18+ and npm
+- Python 3.9+
+- Google API keys (for search and Gemini)
 
-**Use Lovable**
+### Frontend Setup
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+```bash
+# Install dependencies
+npm install
 
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Start development server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+The frontend will be available at `http://localhost:8080`
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Backend Setup
 
-**Use GitHub Codespaces**
+```bash
+# Navigate to backend directory
+cd backend
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+# Create virtual environment
+python -m venv venv
 
-## What technologies are used for this project?
+# Activate virtual environment
+# On macOS/Linux:
+source venv/bin/activate
+# On Windows:
+venv\Scripts\activate
 
-This project is built with:
+# Install dependencies
+pip install -r requirements.txt
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+# Copy environment variables
+cp .env.example .env
 
-## How can I deploy this project?
+# Edit .env with your API keys
+# GOOGLE_API_KEY=your_google_api_key
+# GEMINI_API_KEY=your_gemini_api_key
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+# Start the server
+python app.py
+```
 
-## Can I connect a custom domain to my Lovable project?
+The backend will be available at `http://localhost:5000`
 
-Yes, you can!
+## Environment Variables
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+Create a `.env` file in the `backend` directory:
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+```env
+GOOGLE_API_KEY=your_google_custom_search_api_key
+GEMINI_API_KEY=your_google_gemini_api_key
+```
+
+## API Endpoints
+
+### Room Management
+- `POST /api/rooms` - Create a new game room
+- `GET /api/rooms/<room_id>` - Get room information
+- `POST /api/rooms/<room_id>/join` - Join a room
+- `POST /api/rooms/<room_id>/leave` - Leave a room
+- `POST /api/rooms/<room_id>/start` - Start the game
+- `POST /api/rooms/<room_id>/search` - Perform a search (Searcher only)
+- `POST /api/rooms/<room_id>/guess` - Submit a guess (Guesser only)
+
+### Utility
+- `GET /api/topics/random` - Get a random topic
+- `POST /api/validate-query` - Validate search query
+- `GET /api/health` - Health check
+
+## Project Structure
+
+```
+classified-intel/
+├── src/
+│   ├── components/
+│   │   ├── game/          # Game-specific components
+│   │   ├── layout/        # Header, Background
+│   │   ├── screens/       # Full-page screens
+│   │   └── ui/            # Reusable UI components
+│   ├── pages/             # Route pages
+│   ├── hooks/             # Custom React hooks
+│   └── lib/               # Utilities
+├── backend/
+│   ├── app.py             # Flask application
+│   ├── requirements.txt   # Python dependencies
+│   └── .env.example       # Environment template
+└── public/                # Static assets
+```
+
+## License
+
+MIT License - Feel free to use and modify for your own projects.
