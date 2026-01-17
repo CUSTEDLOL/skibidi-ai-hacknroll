@@ -1,8 +1,10 @@
+import sys
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import uuid
 import string
 import random
+import logging
 from datetime import datetime
 from flask_socketio import SocketIO, join_room, leave_room, emit
 from typing import List
@@ -23,6 +25,16 @@ app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+# Configure logging
+logging.basicConfig(
+    filename='app.log',
+    level=logging.DEBUG,
+    format='%(asctime)s %(levelname)s %(name)s %(threadName)s : %(message)s'
+)
+
+# Redirect stdout to log file (capture any remaining print() statements)
+sys.stdout = open('app_stdout.log', 'a', buffering=1)
+sys.stderr = open('app_stderr.log', 'a', buffering=1)
 
 # ============ In-Memory Storage (replace with database later) ============
 lobbies = {}  # Store active lobbies
@@ -71,7 +83,7 @@ def emit_lobby_state(lobby_id):
 
 @socketio.on("connect")
 def on_connect():
-    print("Socket connected:", request.sid)
+    app.logger.info(f"Socket connected: {request.sid}")
 
 
 @socketio.on("disconnect")
@@ -96,7 +108,7 @@ def on_disconnect():
                     if lobby['status'] == 'waiting':
                         # In lobby: remove player entirely
                         lobby['players'].pop(i)
-                        print(
+                        app.logger.info(
                             f"Player {player_name} ({user_id}) left lobby {lobby_id}")
 
                         # Check if any players remain
@@ -112,13 +124,13 @@ def on_disconnect():
                             lobby_code = lobby['lobbyCode']
                             del lobbies[lobby_id]
                             lobby_code_map.pop(lobby_code, None)
-                            print(
+                            app.logger.info(
                                 f"Lobby {lobby_id} cleaned up (no players remaining)")
 
                     elif lobby['status'] == 'in_game':
                         # During game: mark as disconnected but keep in player list
                         player['isConnected'] = False
-                        print(
+                        app.logger.info(
                             f"Player {player_name} ({user_id}) disconnected during game in lobby {lobby_id}")
 
                         emit_lobby_state(lobby_id)
@@ -133,7 +145,7 @@ def on_disconnect():
             if player_found:
                 break
 
-    print("Socket disconnected:", sid)
+    app.logger.info(f"Socket disconnected: {sid}")
 
 
 @socketio.on("lobby:join")
@@ -170,7 +182,7 @@ def on_lobby_join(data):
             player['isConnected'] = True
             player_name = player['playerName']
             player_found = True
-            print(
+            app.logger.info(
                 f"Player {player_name} ({user_id}) connected to lobby {lobby_id}")
             break
 
@@ -212,7 +224,7 @@ def on_lobby_leave(data):
                 # Only remove player if lobby is in waiting state
                 if lobby['status'] == 'waiting':
                     lobby['players'].pop(i)
-                    print(
+                    app.logger.info(
                         f"Player {player_name} ({user_id}) left lobby {lobby_id}")
 
                     # Broadcast updated state
@@ -228,7 +240,7 @@ def on_lobby_leave(data):
                         lobby_code = lobby['lobbyCode']
                         del lobbies[lobby_id]
                         lobby_code_map.pop(lobby_code, None)
-                        print(
+                        app.logger.info(
                             f"Lobby {lobby_id} cleaned up (no players remaining)")
                 else:
                     # During game, just mark as disconnected
@@ -252,7 +264,7 @@ def on_lobby_leave(data):
 # Debug ping/pong handlers for frontend socket testing
 @socketio.on("ping")
 def handle_ping(data):
-    print("[SocketIO] Received ping from frontend:", data)
+    app.logger.debug(f"[SocketIO] Received ping from frontend: {data}")
     emit("pong", {"msg": "pong from backend", "time": data.get("time")})
     emit("debug", "Ping event received and pong sent.")
 
@@ -327,7 +339,8 @@ def join_lobby(lobby_code):
         'isConnected': False  # Will be set to True when they connect via WebSocket
     })
 
-    print(f"Player {player_name} ({user_id}) added to lobby {lobby_id}")
+    app.logger.info(
+        f"Player {player_name} ({user_id}) added to lobby {lobby_id}")
 
     # Broadcast updated lobby state to all connected clients
     emit_lobby_state(lobby_id)
@@ -381,7 +394,7 @@ def join_random_public_lobby():
             'isConnected': True  # Host is immediately considered connected in quick join flow
         })
 
-        print(
+        app.logger.info(
             f"Player {player_name} ({user_id}) created and joined lobby {lobby_id} as host via quick join")
 
         return jsonify({
@@ -411,7 +424,8 @@ def join_random_public_lobby():
         'isConnected': False  # Will be set to True when they connect via WebSocket
     })
 
-    print(f"Player {player_name} ({user_id}) added to lobby {lobby_id}")
+    app.logger.info(
+        f"Player {player_name} ({user_id}) added to lobby {lobby_id}")
 
     # Broadcast updated lobby state to all connected clients
     emit_lobby_state(lobby_id)

@@ -2,6 +2,7 @@
 WebSocket server for the Classified Intel guessing game.
 Handles room management, role assignment, and game flow.
 """
+import sys
 from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room, leave_room, disconnect
 from flask_cors import CORS
@@ -9,6 +10,7 @@ import os
 import json
 import random
 import string
+import logging
 from typing import Dict, List, Optional, Set
 from dataclasses import dataclass, field
 from enum import Enum
@@ -29,6 +31,17 @@ app.config['SECRET_KEY'] = os.environ.get(
     'SECRET_KEY', 'dev-secret-key-change-in-production')
 CORS(app, resources={r"/*": {"origins": "*"}})
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+# Configure logging
+logging.basicConfig(
+    filename='websocket_server.log',
+    level=logging.DEBUG,
+    format='%(asctime)s %(levelname)s %(name)s %(threadName)s : %(message)s'
+)
+
+# Redirect stdout to log file (capture any remaining print() statements)
+sys.stdout = open('websocket_stdout.log', 'a', buffering=1)
+sys.stderr = open('websocket_stderr.log', 'a', buffering=1)
 
 
 class Role(Enum):

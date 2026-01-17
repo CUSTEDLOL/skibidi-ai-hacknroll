@@ -6,6 +6,15 @@ import os
 import re
 import json
 import random
+import logging
+
+# Configure logging
+logging.basicConfig(
+    filename='search_utils.log',
+    level=logging.DEBUG,
+    format='%(asctime)s %(levelname)s %(name)s %(threadName)s : %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # API Keys (add these to environment variables)
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
@@ -18,7 +27,8 @@ try:
     GOOGLE_SEARCH_AVAILABLE = True
 except ImportError:
     GOOGLE_SEARCH_AVAILABLE = False
-    print("Warning: google-api-python-client not installed. Google Search will not work.")
+    logger.warning(
+        "google-api-python-client not installed. Google Search will not work.")
 
 try:
     import google.genai as genai
@@ -29,7 +39,8 @@ try:
 except ImportError:
     GEMINI_AVAILABLE = False
     model = None
-    print("Warning: google-generativeai not installed. Gemini redaction will not work.")
+    logger.warning(
+        "google-genai not installed. Gemini redaction will not work.")
 
 
 def google_search(search_term, num_results=5):
@@ -41,7 +52,7 @@ def google_search(search_term, num_results=5):
         return []
 
     if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
-        print("Warning: GOOGLE_API_KEY or GOOGLE_CSE_ID not set")
+        logger.warning("GOOGLE_API_KEY or GOOGLE_CSE_ID not set")
         return []
 
     try:
@@ -64,7 +75,7 @@ def google_search(search_term, num_results=5):
 
         return search_results
     except Exception as e:
-        print(f"Search error: {e}")
+        logger.error(f"Search error: {e}")
         return []
 
 
@@ -123,7 +134,7 @@ Important: Use exactly [REDACTED] for each redaction. Be strategic - leave enoug
         redacted_results = json.loads(redacted_text)
         return redacted_results
     except Exception as e:
-        print(f"Gemini redaction error: {e}")
+        logger.error(f"Gemini redaction error: {e}")
         # Fallback: Simple regex-based redaction
         return simple_redaction(search_results, forbidden_words, search_query)
 
@@ -161,11 +172,11 @@ def identify_redacted_terms(search_results, forbidden_words, search_query, secre
     Identify which terms should be redacted and their positions in the text.
     Returns results with redaction indicators for partial redaction display.
     """
-    print(f"[DEBUG] identify_redacted_terms called")
-    print(f"[DEBUG] - Secret topic: {secret_topic}")
-    print(f"[DEBUG] - Forbidden words: {forbidden_words}")
-    print(f"[DEBUG] - Search query: {search_query}")
-    print(f"[DEBUG] - Number of results: {len(search_results)}")
+    logger.debug("identify_redacted_terms called")
+    logger.debug(f"Secret topic: {secret_topic}")
+    logger.debug(f"Forbidden words: {forbidden_words}")
+    logger.debug(f"Search query: {search_query}")
+    logger.debug(f"Number of results: {len(search_results)}")
 
     results_with_indicators = []
 
@@ -177,7 +188,7 @@ def identify_redacted_terms(search_results, forbidden_words, search_query, secre
                            for word in search_query.split() if len(word) > 2)
     words_to_redact.add(secret_topic.lower())
 
-    print(f"[DEBUG] - Words to redact: {words_to_redact}")
+    logger.debug(f"Words to redact: {words_to_redact}")
 
     for result in search_results:
         result_copy = result.copy()
