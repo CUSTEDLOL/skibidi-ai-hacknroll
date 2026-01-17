@@ -19,7 +19,14 @@ import { Header } from "@/components/layout/Header";
 import { Background } from "@/components/layout/Background";
 import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
 import { GlowButton } from "@/components/ui/GlowButton";
-import { getLobby, getLobbyByCode, startGame, type LobbyInfo } from "@/lib/api";
+import {
+  createLobby,
+  joinLobby,
+  getLobby,
+  getLobbyByCode,
+  startGame,
+  type LobbyInfo,
+} from "@/lib/api";
 import { socket } from "@/socket";
 import { toast } from "sonner";
 
@@ -61,6 +68,7 @@ const Lobby = () => {
         const storedSettings = localStorage.getItem("current_lobby_settings");
         let lobbyId = "";
         let lobbyData;
+        let lobbyNotFound = false;
 
         if (storedSettings) {
           const parsed = JSON.parse(storedSettings);
@@ -69,14 +77,68 @@ const Lobby = () => {
           }
         }
 
-        // If no lobbyId in storage, fetch lobby by code
-        if (!lobbyId) {
-          // Fetch lobby by code
-          lobbyData = await getLobbyByCode(code);
-          lobbyId = lobbyData.lobby.lobbyId;
+        // If no lobbyId in storage, fetch lobby by code (if code exists)
+        if (!lobbyId && code) {
+          try {
+            // Fetch lobby by code
+            lobbyData = await getLobbyByCode(code);
+            lobbyId = lobbyData.lobby.lobbyId;
+          } catch (err) {
+            console.log("Lobby not found, will create new one");
+            lobbyNotFound = true;
+          }
         } else {
-          // Fetch full lobby details by ID
+          try {
+            // Fetch full lobby details by ID
+            lobbyData = await getLobby(lobbyId);
+          } catch (err) {
+            console.log("Lobby not found by ID, will create new one");
+            lobbyNotFound = true;
+          }
+        }
+
+        // If lobby doesn't exist or data is invalid, create a new one
+        if (lobbyNotFound || !lobbyData || !lobbyData.lobby || !code) {
+          toast.info("Creating new lobby...");
+
+          // Create a new lobby
+          const newLobbyResponse = await createLobby({ isPublic: true });
+          lobbyId = newLobbyResponse.lobbyId;
+
+          // Get player name from storage or use a default
+          const playerName =
+            localStorage.getItem("player_username") || "Player";
+
+          // Join the newly created lobby
+          const joinResponse = await joinLobby(newLobbyResponse.lobbyCode, {
+            playerName,
+          });
+
+          // Store the new player ID and lobby settings
+          localStorage.setItem("player_id", joinResponse.userId);
+          localStorage.setItem("player_username", joinResponse.playerName);
+          localStorage.setItem(
+            "current_lobby_settings",
+            JSON.stringify({
+              lobbyId: newLobbyResponse.lobbyId,
+              lobbyCode: newLobbyResponse.lobbyCode,
+              settings: {
+                difficulty: "medium",
+                rounds: 5,
+                timePerRound: 90,
+                rhythmMode: false,
+              },
+            }),
+          );
+
+          // Fetch the complete lobby data
           lobbyData = await getLobby(lobbyId);
+
+          // Navigate to the new lobby code if different from current
+          if (newLobbyResponse.lobbyCode !== code) {
+            navigate(`/lobby/${newLobbyResponse.lobbyCode}`, { replace: true });
+            return;
+          }
         }
 
         lobbyIdRef.current = lobbyId;
@@ -100,7 +162,7 @@ const Lobby = () => {
 
         setIsLoading(false);
       } catch (error) {
-        console.error("Failed to load lobby:", error);
+        console.error("Failed to load/create lobby:", error);
         toast.error(
           error instanceof Error ? error.message : "Failed to load lobby",
         );
