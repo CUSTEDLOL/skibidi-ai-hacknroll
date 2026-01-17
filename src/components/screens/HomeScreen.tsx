@@ -29,8 +29,7 @@ export function HomeScreen({
   const [codeError, setCodeError] = useState("");
 
   const handleCodeChange = (value: string) => {
-    const upperValue = value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
-    setRoomCode(upperValue);
+    setRoomCode(value);
     setCodeError("");
   };
 
