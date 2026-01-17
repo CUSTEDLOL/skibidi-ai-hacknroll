@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { ReactNode } from "react";
+import { useAudio } from "@/contexts/AudioContext";
 
 interface GlowButtonProps {
   children: ReactNode;
@@ -20,6 +21,8 @@ export function GlowButton({
   className = "",
   icon,
 }: GlowButtonProps) {
+  const { playHover, playClick } = useAudio();
+
   const variants = {
     primary: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_0_20px_hsl(180_100%_50%/0.5)]",
     secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-primary/30",
@@ -33,9 +36,23 @@ export function GlowButton({
     lg: "px-8 py-4 text-lg",
   };
 
+  const handleClick = () => {
+    if (!disabled) {
+      playClick();
+      onClick?.();
+    }
+  };
+
+  const handleHover = () => {
+    if (!disabled) {
+      playHover();
+    }
+  };
+
   return (
     <motion.button
-      onClick={onClick}
+      onClick={handleClick}
+      onMouseEnter={handleHover}
       disabled={disabled}
       whileHover={{ scale: disabled ? 1 : 1.02, filter: "brightness(1.1)" }}
       whileTap={{ scale: disabled ? 1 : 0.95 }}
