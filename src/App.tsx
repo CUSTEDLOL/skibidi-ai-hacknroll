@@ -4,7 +4,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
-import SelectRole from "./pages/SelectRole";
+import CreateRoom from "./pages/CreateRoom";
+import Lobby from "./pages/Lobby";
+import AssignRoles from "./pages/AssignRoles";
 import SearcherBriefing from "./pages/SearcherBriefing";
 import SearcherActive from "./pages/SearcherActive";
 import GuesserActive from "./pages/GuesserActive";
@@ -22,7 +24,9 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
-          <Route path="/select-role" element={<SelectRole />} />
+          <Route path="/create-room" element={<CreateRoom />} />
+          <Route path="/lobby/:code" element={<Lobby />} />
+          <Route path="/lobby/:code/assign-roles" element={<AssignRoles />} />
           <Route path="/game/searcher-briefing" element={<SearcherBriefing />} />
           <Route path="/game/searcher-active" element={<SearcherActive />} />
           <Route path="/game/guesser-active" element={<GuesserActive />} />

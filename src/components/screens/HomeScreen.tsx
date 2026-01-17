@@ -1,24 +1,49 @@
-import { motion } from "framer-motion";
-import { Play, Users, HelpCircle, Calendar, Trophy, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Gamepad2, Home, KeyRound, HelpCircle, Calendar, Trophy, Sparkles, X, Loader2 } from "lucide-react";
 import { GlowButton } from "../ui/GlowButton";
 import { AnimatedGlitchText } from "../ui/GlitchText";
 import { ClassifiedStamp } from "../ui/ClassifiedStamp";
 
 interface HomeScreenProps {
-  onStartGame?: () => void;
-  onJoinGame?: () => void;
+  onQuickJoin?: () => void;
+  onCreateRoom?: () => void;
+  onJoinWithCode?: (code: string) => void;
   onHowToPlay?: () => void;
   onDailyChallenge?: () => void;
   onLeaderboard?: () => void;
+  isSearching?: boolean;
 }
 
 export function HomeScreen({
-  onStartGame,
-  onJoinGame,
+  onQuickJoin,
+  onCreateRoom,
+  onJoinWithCode,
   onHowToPlay,
   onDailyChallenge,
   onLeaderboard,
+  isSearching = false,
 }: HomeScreenProps) {
+  const [showCodeModal, setShowCodeModal] = useState(false);
+  const [roomCode, setRoomCode] = useState("");
+  const [codeError, setCodeError] = useState("");
+
+  const handleCodeChange = (value: string) => {
+    const upperValue = value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    setRoomCode(upperValue);
+    setCodeError("");
+  };
+
+  const handleJoinWithCode = () => {
+    if (roomCode.length !== 6) {
+      setCodeError("Code must be 6 characters");
+      return;
+    }
+    onJoinWithCode?.(roomCode);
+    setShowCodeModal(false);
+    setRoomCode("");
+  };
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 py-20">
       {/* Main Title */}
@@ -45,39 +70,70 @@ export function HomeScreen({
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
-        className="flex flex-col gap-4 w-full max-w-sm"
+        className="flex flex-col gap-4 w-full max-w-md"
       >
-        {/* Primary CTA */}
-        <GlowButton 
-          onClick={onStartGame} 
-          variant="primary" 
-          size="lg"
-          icon={<Play className="w-5 h-5" />}
-          className="w-full animate-pulse-glow"
+        {/* Quick Join - Primary CTA */}
+        <motion.button
+          onClick={onQuickJoin}
+          disabled={isSearching}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          className="relative w-full p-6 bg-gradient-to-r from-primary/20 to-accent/20 border-2 border-primary/50 
+            rounded-lg hover:border-primary transition-all group overflow-hidden disabled:opacity-50"
         >
-          Start New Game
-        </GlowButton>
+          <div className="absolute inset-0 bg-gradient-to-r from-primary/10 to-accent/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="relative flex flex-col items-center gap-2">
+            {isSearching ? (
+              <>
+                <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                <span className="font-mono text-lg font-bold text-foreground">SEARCHING FOR GAME...</span>
+                <span className="font-mono text-sm text-muted-foreground">Finding available lobbies</span>
+              </>
+            ) : (
+              <>
+                <Gamepad2 className="w-8 h-8 text-primary" />
+                <span className="font-mono text-lg font-bold text-foreground">QUICK JOIN</span>
+                <span className="font-mono text-sm text-muted-foreground">Jump into a random game</span>
+              </>
+            )}
+          </div>
+        </motion.button>
 
-        {/* Join Game */}
-        <motion.div
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.4 }}
-          className="flex gap-2"
-        >
-          <input
-            type="text"
-            placeholder="Enter room code..."
-            className="flex-1 px-4 py-3 bg-card border-2 border-border rounded-lg font-mono text-sm 
-              focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground"
-          />
-          <GlowButton onClick={onJoinGame} variant="secondary" icon={<Users className="w-4 h-4" />}>
-            Join
-          </GlowButton>
-        </motion.div>
+        {/* Create Room & Enter Code Row */}
+        <div className="grid grid-cols-2 gap-3">
+          <motion.button
+            onClick={onCreateRoom}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.4 }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="flex flex-col items-center gap-2 p-4 bg-card border border-border rounded-lg
+              hover:border-primary/50 transition-all group"
+          >
+            <Home className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />
+            <span className="font-mono text-sm font-semibold text-foreground">CREATE ROOM</span>
+            <span className="font-mono text-xs text-muted-foreground">Host a new game</span>
+          </motion.button>
+
+          <motion.button
+            onClick={() => setShowCodeModal(true)}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.4 }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="flex flex-col items-center gap-2 p-4 bg-card border border-border rounded-lg
+              hover:border-primary/50 transition-all group"
+          >
+            <KeyRound className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />
+            <span className="font-mono text-sm font-semibold text-foreground">ENTER CODE</span>
+            <span className="font-mono text-xs text-muted-foreground">Join with code</span>
+          </motion.button>
+        </div>
 
         {/* Secondary Actions */}
-        <div className="grid grid-cols-2 gap-3 mt-4">
+        <div className="grid grid-cols-3 gap-3 mt-2">
           <motion.button
             onClick={onHowToPlay}
             initial={{ opacity: 0, y: 20 }}
@@ -85,11 +141,11 @@ export function HomeScreen({
             transition={{ delay: 0.5 }}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="flex flex-col items-center gap-2 p-4 bg-card border border-border rounded-lg
+            className="flex flex-col items-center gap-2 p-3 bg-card/50 border border-border/50 rounded-lg
               hover:border-primary/30 transition-all group"
           >
-            <HelpCircle className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />
-            <span className="font-mono text-sm text-muted-foreground group-hover:text-foreground transition-colors">
+            <HelpCircle className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+            <span className="font-mono text-xs text-muted-foreground group-hover:text-foreground transition-colors">
               How to Play
             </span>
           </motion.button>
@@ -101,38 +157,37 @@ export function HomeScreen({
             transition={{ delay: 0.6 }}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="relative flex flex-col items-center gap-2 p-4 bg-card border border-accent/30 rounded-lg
+            className="relative flex flex-col items-center gap-2 p-3 bg-card/50 border border-accent/30 rounded-lg
               hover:border-accent/60 transition-all group overflow-hidden"
           >
-            {/* Badge */}
-            <div className="absolute -top-1 -right-1 px-2 py-0.5 bg-accent text-accent-foreground font-mono text-[10px] font-bold rounded-bl-lg">
+            <div className="absolute -top-1 -right-1 px-1.5 py-0.5 bg-accent text-accent-foreground font-mono text-[8px] font-bold rounded-bl-lg">
               NEW
             </div>
-            <Calendar className="w-6 h-6 text-accent" />
-            <span className="font-mono text-sm text-muted-foreground group-hover:text-foreground transition-colors">
+            <Calendar className="w-5 h-5 text-accent" />
+            <span className="font-mono text-xs text-muted-foreground group-hover:text-foreground transition-colors">
               Daily Challenge
             </span>
           </motion.button>
-        </div>
 
-        {/* Leaderboard */}
-        <motion.button
-          onClick={onLeaderboard}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.7 }}
-          whileHover={{ scale: 1.01 }}
-          className="flex items-center justify-center gap-3 p-3 bg-transparent border border-border/50 rounded-lg
-            hover:border-primary/30 hover:bg-card/50 transition-all group mt-2"
-        >
-          <Trophy className="w-5 h-5 text-accent" />
-          <span className="font-mono text-sm text-muted-foreground group-hover:text-foreground transition-colors">
-            View Leaderboard
-          </span>
-        </motion.button>
+          <motion.button
+            onClick={onLeaderboard}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.7 }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="flex flex-col items-center gap-2 p-3 bg-card/50 border border-border/50 rounded-lg
+              hover:border-primary/30 transition-all group"
+          >
+            <Trophy className="w-5 h-5 text-accent" />
+            <span className="font-mono text-xs text-muted-foreground group-hover:text-foreground transition-colors">
+              Leaderboard
+            </span>
+          </motion.button>
+        </div>
       </motion.div>
 
-      {/* Bottom decorative elements */}
+      {/* Bottom tagline */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -145,6 +200,89 @@ export function HomeScreen({
           <Sparkles className="w-3 h-3" />
         </div>
       </motion.div>
+
+      {/* Enter Code Modal */}
+      <AnimatePresence>
+        {showCodeModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowCodeModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm bg-card border border-border rounded-lg p-6 shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="w-5 h-5 text-primary" />
+                  <h2 className="font-mono font-bold text-foreground">ENTER ROOM CODE</h2>
+                </div>
+                <button
+                  onClick={() => setShowCodeModal(false)}
+                  className="p-1 hover:bg-muted rounded transition-colors"
+                >
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+
+              <p className="font-mono text-sm text-muted-foreground mb-4">
+                Enter the 6-character code:
+              </p>
+
+              <div className="relative mb-4">
+                <input
+                  type="text"
+                  value={roomCode}
+                  onChange={(e) => handleCodeChange(e.target.value)}
+                  placeholder="XXXXXX"
+                  className="w-full px-4 py-4 bg-background border-2 border-border rounded-lg font-mono text-2xl 
+                    text-center tracking-[0.5em] focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground/30
+                    uppercase"
+                  maxLength={6}
+                  autoFocus
+                />
+                {roomCode.length === 6 && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500 font-mono text-sm"
+                  >
+                    ✓
+                  </motion.div>
+                )}
+              </div>
+
+              {codeError && (
+                <p className="font-mono text-sm text-destructive mb-4">{codeError}</p>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowCodeModal(false)}
+                  className="flex-1 px-4 py-3 bg-muted border border-border rounded-lg font-mono text-sm
+                    hover:bg-muted/80 transition-colors"
+                >
+                  CANCEL
+                </button>
+                <GlowButton
+                  onClick={handleJoinWithCode}
+                  variant="primary"
+                  className="flex-1"
+                  disabled={roomCode.length !== 6}
+                >
+                  JOIN
+                </GlowButton>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
