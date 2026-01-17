@@ -47,9 +47,7 @@ class TestCreateLobby:
     def test_create_public_lobby_success(self, client, clean_lobbies):
         """Test creating a public lobby"""
         response = client.post('/api/create-lobby', json={
-            'isPublic': True,
-            'playerName': 'TestPlayer',
-            'userId': 'user123'
+            'isPublic': True
         })
 
         assert response.status_code == 201
@@ -64,9 +62,7 @@ class TestCreateLobby:
     def test_create_private_lobby_success(self, client, clean_lobbies):
         """Test creating a private lobby"""
         response = client.post('/api/create-lobby', json={
-            'isPublic': False,
-            'playerName': 'TestPlayer',
-            'userId': 'user456'
+            'isPublic': False
         })
 
         assert response.status_code == 201
@@ -74,27 +70,16 @@ class TestCreateLobby:
 
         assert data['isPublic'] is False
 
-    def test_create_lobby_missing_user_id(self, client, clean_lobbies):
-        """Test creating lobby without userId"""
-        response = client.post('/api/create-lobby', json={
-            'isPublic': True,
-            'playerName': 'TestPlayer'
-        })
-
-        assert response.status_code == 400
-        data = json.loads(response.data)
-        assert 'error' in data
-
     def test_create_lobby_default_values(self, client, clean_lobbies):
         """Test creating lobby with minimal data"""
-        response = client.post('/api/create-lobby', json={
-            'userId': 'user789'
-        })
+        response = client.post('/api/create-lobby', json={})
 
         assert response.status_code == 201
         data = json.loads(response.data)
         assert 'lobbyId' in data
         assert 'lobbyCode' in data
+        # Lobby should be public by default
+        assert data['isPublic'] is True
 
 
 class TestJoinLobby:
@@ -104,72 +89,59 @@ class TestJoinLobby:
         """Test successfully joining a lobby"""
         # First create a lobby
         create_response = client.post('/api/create-lobby', json={
-            'isPublic': True,
-            'playerName': 'Host',
-            'userId': 'host123'
+            'isPublic': True
         })
         lobby_code = json.loads(create_response.data)['lobbyCode']
 
-        # Join the lobby
+        # Join the lobby with first player
         response = client.post(f'/api/join-lobby/{lobby_code}', json={
-            'playerName': 'Joiner',
-            'userId': 'joiner456'
+            'playerName': 'Joiner'
         })
 
         assert response.status_code == 200
         data = json.loads(response.data)
 
         assert 'lobbyId' in data
+        assert 'userId' in data
+        assert 'playerName' in data
         assert 'players' in data
-        assert len(data['players']) == 2
+        assert len(data['players']) == 1
 
     def test_join_lobby_nonexistent(self, client, clean_lobbies):
         """Test joining a non-existent lobby"""
         response = client.post('/api/join-lobby/ABCDEF', json={
-            'playerName': 'Player',
-            'userId': 'user123'
+            'playerName': 'Player'
         })
 
         assert response.status_code == 404
         data = json.loads(response.data)
         assert 'error' in data
 
-    def test_join_lobby_missing_user_id(self, client, clean_lobbies):
-        """Test joining lobby without userId"""
-        response = client.post('/api/join-lobby/ABCDEF', json={
-            'playerName': 'Player'
-        })
-
-        assert response.status_code == 400
-        data = json.loads(response.data)
-        assert 'error' in data
-
-    def test_join_lobby_already_in_lobby(self, client, clean_lobbies):
-        """Test joining same lobby twice (idempotent)"""
+    def test_join_lobby_multiple_players(self, client, clean_lobbies):
+        """Test multiple players joining same lobby"""
         # Create lobby
         create_response = client.post('/api/create-lobby', json={
-            'isPublic': True,
-            'playerName': 'Host',
-            'userId': 'host123'
+            'isPublic': True
         })
         lobby_code = json.loads(create_response.data)['lobbyCode']
 
-        # Join twice with same userId
+        # Join with first player
         response1 = client.post(f'/api/join-lobby/{lobby_code}', json={
-            'playerName': 'Player',
-            'userId': 'player123'
+            'playerName': 'Player1'
         })
+        # Join with second player
         response2 = client.post(f'/api/join-lobby/{lobby_code}', json={
-            'playerName': 'Player',
-            'userId': 'player123'
+            'playerName': 'Player2'
         })
 
         assert response1.status_code == 200
         assert response2.status_code == 200
 
-        # Should still only have 2 players (host + joiner)
+        # Should have 2 players
         data = json.loads(response2.data)
         assert len(data['players']) == 2
+        assert data['players'][0]['playerName'] == 'Player1'
+        assert data['players'][1]['playerName'] == 'Player2'
 
 
 class TestJoinRandomPublicLobby:
@@ -177,46 +149,62 @@ class TestJoinRandomPublicLobby:
 
     def test_join_random_creates_new_lobby(self, client, clean_lobbies):
         """Test joining random lobby when none available creates new one"""
-        response = client.post('/api/join-random-public-lobby', json={
-            'playerName': 'Player',
-            'userId': 'user123'
-        })
+        response = client.post('/api/join-random-public-lobby', json={})
 
-        assert response.status_code == 201  # Created new lobby
+        assert response.status_code == 200
         data = json.loads(response.data)
         assert 'lobbyId' in data
         assert 'lobbyCode' in data
+        assert 'userId' in data
+        assert 'playerName' in data
+        assert 'players' in data
+        assert len(data['players']) == 1
+
+    def test_join_random_first_user_is_connected(self, client, clean_lobbies):
+        """Test edge case: first user quick joining empty lobby is marked as connected"""
+        response = client.post('/api/join-random-public-lobby', json={
+            'playerName': 'FirstPlayer'
+        })
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        # Verify the player was added
+        assert len(data['players']) == 1
+        player = data['players'][0]
+
+        # This is the fix: first user (host) should be marked as connected
+        # so they can receive websocket updates immediately
+        assert player['isConnected'] is True
+        assert player['playerName'] == 'FirstPlayer'
+
+        # Verify they are the host (first player)
+        assert data['players'][0]['playerId'] == data['userId']
 
     def test_join_random_joins_existing_lobby(self, client, clean_lobbies):
         """Test joining random lobby joins existing available lobby"""
-        # Create a public lobby with 1 player
-        create_response = client.post('/api/create-lobby', json={
-            'isPublic': True,
-            'playerName': 'Host',
-            'userId': 'host123'
+        # First user creates a lobby via quick join
+        first_response = client.post('/api/join-random-public-lobby', json={
+            'playerName': 'Host'
         })
+        first_lobby_id = json.loads(first_response.data)['lobbyId']
 
-        # Join random should join this lobby
+        # Second user joins via quick join
         response = client.post('/api/join-random-public-lobby', json={
-            'playerName': 'Joiner',
-            'userId': 'joiner456'
+            'playerName': 'Joiner'
         })
 
-        assert response.status_code == 200  # Joined existing lobby
+        assert response.status_code == 200
         data = json.loads(response.data)
-        assert 'lobbyId' in data
-        assert 'players' in data
+
+        # Should join the existing lobby
+        assert data['lobbyId'] == first_lobby_id
         assert len(data['players']) == 2
 
-    def test_join_random_missing_user_id(self, client, clean_lobbies):
-        """Test joining random lobby without userId"""
-        response = client.post('/api/join-random-public-lobby', json={
-            'playerName': 'Player'
-        })
-
-        assert response.status_code == 400
-        data = json.loads(response.data)
-        assert 'error' in data
+        # First player should still be connected
+        assert data['players'][0]['isConnected'] is True
+        # Second player should be marked as not connected until websocket join
+        assert data['players'][1]['isConnected'] is False
 
 
 class TestGetLobby:
@@ -226,9 +214,7 @@ class TestGetLobby:
         """Test getting lobby details"""
         # Create a lobby
         create_response = client.post('/api/create-lobby', json={
-            'isPublic': True,
-            'playerName': 'Host',
-            'userId': 'host123'
+            'isPublic': True
         })
         lobby_id = json.loads(create_response.data)['lobbyId']
 
@@ -254,18 +240,15 @@ class TestStartGame:
 
     def test_start_game_success(self, client, clean_lobbies):
         """Test successfully starting a game"""
-        # Create lobby with 2 players
-        create_response = client.post('/api/create-lobby', json={
-            'isPublic': True,
-            'playerName': 'Host',
-            'userId': 'host123'
+        # Create lobby with 2 players via quick join
+        first_response = client.post('/api/join-random-public-lobby', json={
+            'playerName': 'Host'
         })
-        lobby_id = json.loads(create_response.data)['lobbyId']
-        lobby_code = json.loads(create_response.data)['lobbyCode']
+        lobby_id = json.loads(first_response.data)['lobbyId']
 
-        client.post(f'/api/join-lobby/{lobby_code}', json={
-            'playerName': 'Joiner',
-            'userId': 'joiner456'
+        # Second player joins
+        second_response = client.post('/api/join-random-public-lobby', json={
+            'playerName': 'Joiner'
         })
 
         # Start the game
@@ -288,12 +271,10 @@ class TestStartGame:
     def test_start_game_not_enough_players(self, client, clean_lobbies):
         """Test starting game with only 1 player"""
         # Create lobby with only 1 player
-        create_response = client.post('/api/create-lobby', json={
-            'isPublic': True,
-            'playerName': 'Host',
-            'userId': 'host123'
+        response = client.post('/api/join-random-public-lobby', json={
+            'playerName': 'Host'
         })
-        lobby_id = json.loads(create_response.data)['lobbyId']
+        lobby_id = json.loads(response.data)['lobbyId']
 
         # Try to start game
         response = client.post(f'/api/start-game/{lobby_id}', json={
@@ -320,17 +301,13 @@ class TestStartGame:
     def test_start_game_assigns_roles(self, client, clean_lobbies):
         """Test that starting game assigns roles to players"""
         # Create lobby with 2 players
-        create_response = client.post('/api/create-lobby', json={
-            'isPublic': True,
-            'playerName': 'Host',
-            'userId': 'host123'
+        first_response = client.post('/api/join-random-public-lobby', json={
+            'playerName': 'Host'
         })
-        lobby_id = json.loads(create_response.data)['lobbyId']
-        lobby_code = json.loads(create_response.data)['lobbyCode']
+        lobby_id = json.loads(first_response.data)['lobbyId']
 
-        client.post(f'/api/join-lobby/{lobby_code}', json={
-            'playerName': 'Joiner',
-            'userId': 'joiner456'
+        client.post('/api/join-random-public-lobby', json={
+            'playerName': 'Joiner'
         })
 
         # Start game
