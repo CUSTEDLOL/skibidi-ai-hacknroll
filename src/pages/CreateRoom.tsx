@@ -32,7 +32,7 @@ const CreateRoom = () => {
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [rounds, setRounds] = useState(5);
   const [timePerRound, setTimePerRound] = useState(90);
-  const [maxPlayers, setMaxPlayers] = useState(2);
+  const [minPlayers, setMinPlayers] = useState(2);
   const [isPublic, setIsPublic] = useState(false);
   const [category, setCategory] = useState("general");
   const [rhythmMode, setRhythmMode] = useState(false);
@@ -79,7 +79,7 @@ const CreateRoom = () => {
         difficulty,
         rounds,
         timePerRound,
-        maxPlayers,
+        minPlayers,
         isPublic,
         category,
         rhythmMode,
@@ -96,8 +96,13 @@ const CreateRoom = () => {
       const lobbyData = await createLobby({ isPublic });
       const { lobbyId, lobbyCode } = lobbyData;
 
+      // Get player name from input or storage
+      const storedName = localStorage.getItem("player_username");
+      
       // Now join the lobby to get userId and playerName
-      const joinResult = await joinLobby(lobbyCode, {});
+      const joinResult = await joinLobby(lobbyCode, { 
+        playerName: storedName || undefined 
+      });
 
       // Store userId and playerName in localStorage
       localStorage.setItem("player_id", joinResult.userId);
@@ -298,18 +303,18 @@ const CreateRoom = () => {
               </h2>
             </div>
 
-            {/* Max Players */}
+            {/* Min Players */}
             <div className="mb-4">
               <label className="font-mono text-sm text-muted-foreground mb-2 block">
-                Max Players
+                Min Players
               </label>
               <div className="flex gap-2">
                 {playerOptions.map((num) => (
                   <button
                     key={num}
-                    onClick={() => setMaxPlayers(num)}
+                    onClick={() => setMinPlayers(num)}
                     className={`flex-1 py-2 rounded-lg border transition-all font-mono text-sm ${
-                      maxPlayers === num
+                      minPlayers === num
                         ? "bg-primary/20 border-primary text-foreground"
                         : "bg-card border-border text-muted-foreground hover:border-primary/50"
                     }`}

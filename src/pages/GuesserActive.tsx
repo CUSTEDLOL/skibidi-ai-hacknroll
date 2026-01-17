@@ -6,9 +6,13 @@ import { Background } from "@/components/layout/Background";
 import { Timer } from "@/components/ui/Timer";
 import { TerminalInput } from "@/components/ui/TerminalInput";
 import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
+import { ChatPanel } from "@/components/ui/ChatPanel";
+import { PlayerLeaderboard } from "@/components/ui/PlayerLeaderboard";
+import { LeaveGameButton } from "@/components/ui/LeaveGameButton";
 import { FileText, BarChart3, Calendar, User, MapPin, MessageSquare, HelpCircle } from "lucide-react";
 import { GlowButton } from "@/components/ui/GlowButton";
 import { toast } from "sonner";
+import { getOrCreatePlayerId, getOrCreatePlayerName, type Player } from "@/lib/playerUtils";
 
 interface ExtractedClue {
   type: "date" | "person" | "location" | "quote";
@@ -29,6 +33,18 @@ const GuesserActive = () => {
   const [guessHistory, setGuessHistory] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [redactedResults, setRedactedResults] = useState<RedactedResult[]>([]);
+  
+  // Game state
+  const playerId = getOrCreatePlayerId();
+  const playerName = getOrCreatePlayerName();
+  
+  // Mock lobby data (replace with actual websocket data later)
+  const lobbyId = (location.state as any)?.lobbyId || "demo-lobby";
+  const [players, setPlayers] = useState<Player[]>([
+    { id: "p1", username: "Agent 007", score: 0, isHost: true, role: 'searcher', isReady: true },
+    { id: playerId, username: playerName, score: 0, isHost: false, role: 'guesser', isReady: true },
+    { id: "p3", username: "Neon Shadow", score: 0, isHost: false, role: 'guesser', isReady: true },
+  ]);
 
   // Get game state from location state or use defaults
   const round = (location.state as any)?.round || 1;
@@ -157,10 +173,15 @@ const GuesserActive = () => {
     <div className="min-h-screen scanlines">
       <Background />
       <Header />
+      
+      {/* Leave Game Button */}
+      <div className="fixed top-24 left-4 z-50">
+        <LeaveGameButton />
+      </div>
 
       <div className="min-h-screen pt-20 pb-8 px-4">
         {/* Top HUD */}
-        <div className="flex items-center justify-between max-w-6xl mx-auto mb-6">
+        <div className="flex items-center justify-between max-w-7xl mx-auto mb-6 pl-20 pr-4">
           <div className="flex items-center gap-4">
             <div className="font-mono text-sm text-muted-foreground">
               ROUND <span className="text-primary">{round}</span>/{totalRounds}
@@ -173,9 +194,9 @@ const GuesserActive = () => {
           <ClassifiedStamp type="classified" className="text-xs" animate={false} />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
-          {/* Main Content */}
-          <div className="lg:col-span-3 space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-7xl mx-auto">
+          {/* Main Content (8 cols) */}
+          <div className="lg:col-span-8 space-y-6">
             {/* Classified Document Header */}
             <motion.div
               initial={{ opacity: 0, y: -20 }}
@@ -254,39 +275,57 @@ const GuesserActive = () => {
             )}
           </div>
 
-          {/* Sidebar - Extracted Intel */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.3 }}
-            className="bg-card border border-border rounded-lg p-4"
-          >
-            <div className="flex items-center gap-2 mb-4">
-              <BarChart3 className="w-4 h-4 text-accent" />
-              <span className="font-mono text-sm font-bold">EXTRACTED INTEL</span>
-            </div>
-            
-            <div className="space-y-3">
-              {extractedClues.map((clue, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.5 + index * 0.1 }}
-                  className="flex items-center gap-2 p-2 bg-secondary/30 rounded border border-border/50"
-                >
-                  <div className="text-primary">{clue.icon}</div>
-                  <span className="font-mono text-xs text-foreground">{clue.value}</span>
-                </motion.div>
-              ))}
-            </div>
+          {/* Sidebar (4 cols) */}
+          <div className="lg:col-span-4 space-y-4 h-full flex flex-col">
+          
+             {/* Player Leaderboard */}
+             <PlayerLeaderboard 
+                players={players} 
+                currentPlayerId={playerId} 
+                className="flex-shrink-0"
+             />
 
-            <div className="mt-4 pt-4 border-t border-border">
-              <p className="font-mono text-xs text-muted-foreground">
-                Clues are automatically extracted from visible text. Use them to form your hypothesis.
-              </p>
-            </div>
-          </motion.div>
+             {/* Chat Panel */}
+             <ChatPanel 
+                lobbyId={lobbyId} 
+                playerId={playerId} 
+                className="flex-shrink-0"
+             />
+
+             {/* Extracted Intel */}
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.3 }}
+              className="bg-card border border-border rounded-lg p-4 flex-1"
+            >
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 className="w-4 h-4 text-accent" />
+                <span className="font-mono text-sm font-bold">EXTRACTED INTEL</span>
+              </div>
+              
+              <div className="space-y-3">
+                {extractedClues.map((clue, index) => (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.5 + index * 0.1 }}
+                    className="flex items-center gap-2 p-2 bg-secondary/30 rounded border border-border/50"
+                  >
+                    <div className="text-primary">{clue.icon}</div>
+                    <span className="font-mono text-xs text-foreground">{clue.value}</span>
+                  </motion.div>
+                ))}
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-border">
+                <p className="font-mono text-xs text-muted-foreground">
+                  Clues are automatically extracted from visible text. Use them to form your hypothesis.
+                </p>
+              </div>
+            </motion.div>
+          </div>
         </div>
       </div>
     </div>

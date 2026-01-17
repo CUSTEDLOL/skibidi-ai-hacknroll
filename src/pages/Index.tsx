@@ -4,18 +4,20 @@ import { Header } from "@/components/layout/Header";
 import { Background } from "@/components/layout/Background";
 import { HomeScreen } from "@/components/screens/HomeScreen";
 import { HowToPlayModal } from "@/components/screens/HowToPlayModal";
+import { LeaderboardModal } from "@/components/screens/LeaderboardModal";
 import { joinRandomPublicLobby, joinLobby } from "@/lib/api";
 import { toast } from "sonner";
 
 const Index = () => {
   const navigate = useNavigate();
   const [showHowToPlay, setShowHowToPlay] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
 
-  const handleQuickJoin = async () => {
+  const handleQuickJoin = async (playerName: string) => {
     setIsSearching(true);
     try {
-      const result = await joinRandomPublicLobby({});
+      const result = await joinRandomPublicLobby({ playerName });
       // Store userId and playerName in localStorage for this session
       localStorage.setItem("player_id", result.userId);
       localStorage.setItem("player_username", result.playerName);
@@ -29,9 +31,9 @@ const Index = () => {
     }
   };
 
-  const handleJoinWithCode = async (code: string) => {
+  const handleJoinWithCode = async (code: string, playerName: string) => {
     try {
-      const result = await joinLobby(code, {});
+      const result = await joinLobby(code, { playerName });
       // Store userId and playerName in localStorage for this session
       localStorage.setItem("player_id", result.userId);
       localStorage.setItem("player_username", result.playerName);
@@ -44,22 +46,32 @@ const Index = () => {
     }
   };
 
+  const handleCreateRoom = (playerName: string) => {
+     // Store name before navigating
+     localStorage.setItem("player_username", playerName);
+     navigate("/create-room");
+  };
+
   return (
     <div className="min-h-screen scanlines">
       <Background />
       <Header />
       <HomeScreen
         onQuickJoin={handleQuickJoin}
-        onCreateRoom={() => navigate("/create-room")}
+        onCreateRoom={handleCreateRoom}
         onJoinWithCode={handleJoinWithCode}
         onHowToPlay={() => setShowHowToPlay(true)}
         onDailyChallenge={() => {}}
-        onLeaderboard={() => {}}
+        onLeaderboard={() => setShowLeaderboard(true)}
         isSearching={isSearching}
       />
       <HowToPlayModal
         isOpen={showHowToPlay}
         onClose={() => setShowHowToPlay(false)}
+      />
+      <LeaderboardModal
+        isOpen={showLeaderboard}
+        onClose={() => setShowLeaderboard(false)}
       />
     </div>
   );

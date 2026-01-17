@@ -1,14 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Gamepad2, Home, KeyRound, HelpCircle, Calendar, Trophy, Sparkles, X, Loader2 } from "lucide-react";
+import { Gamepad2, Home, KeyRound, HelpCircle, Calendar, Trophy, Sparkles, X, Loader2, User } from "lucide-react";
 import { GlowButton } from "../ui/GlowButton";
 import { AnimatedGlitchText } from "../ui/GlitchText";
 import { ClassifiedStamp } from "../ui/ClassifiedStamp";
+import { getOrCreatePlayerName } from "@/lib/playerUtils";
 
 interface HomeScreenProps {
-  onQuickJoin?: () => void;
-  onCreateRoom?: () => void;
-  onJoinWithCode?: (code: string) => void;
+  onQuickJoin?: (playerName: string) => void;
+  onCreateRoom?: (playerName: string) => void;
+  onJoinWithCode?: (code: string, playerName: string) => void;
   onHowToPlay?: () => void;
   onDailyChallenge?: () => void;
   onLeaderboard?: () => void;
@@ -27,6 +28,15 @@ export function HomeScreen({
   const [showCodeModal, setShowCodeModal] = useState(false);
   const [roomCode, setRoomCode] = useState("");
   const [codeError, setCodeError] = useState("");
+  const [playerName, setPlayerName] = useState("");
+
+  useEffect(() => {
+    // Load existing name if available
+    const storedName = localStorage.getItem("player_username");
+    if (storedName && !storedName.startsWith("Agent ")) {
+      setPlayerName(storedName);
+    }
+  }, []);
 
   const handleCodeChange = (value: string) => {
     setRoomCode(value);
@@ -38,9 +48,20 @@ export function HomeScreen({
       setCodeError("Code must be 6 characters");
       return;
     }
-    onJoinWithCode?.(roomCode);
+    const finalName = getOrCreatePlayerName(playerName);
+    onJoinWithCode?.(roomCode, finalName);
     setShowCodeModal(false);
     setRoomCode("");
+  };
+
+  const handleQuickJoinClick = () => {
+    const finalName = getOrCreatePlayerName(playerName);
+    onQuickJoin?.(finalName);
+  };
+
+  const handleCreateRoomClick = () => {
+    const finalName = getOrCreatePlayerName(playerName);
+    onCreateRoom?.(finalName);
   };
 
   return (
@@ -71,9 +92,29 @@ export function HomeScreen({
         transition={{ delay: 0.3 }}
         className="flex flex-col gap-4 w-full max-w-md"
       >
+        {/* Player Name Input */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35 }}
+          className="relative"
+        >
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+            <User className="w-5 h-5" />
+          </div>
+          <input
+            type="text"
+            value={playerName}
+            onChange={(e) => setPlayerName(e.target.value)}
+            placeholder="ENTER CODENAME (Optional)"
+            className="w-full pl-10 pr-4 py-3 bg-card/50 border border-border rounded-lg font-mono text-sm
+              focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground/50 text-foreground"
+          />
+        </motion.div>
+
         {/* Quick Join - Primary CTA */}
         <motion.button
-          onClick={onQuickJoin}
+          onClick={handleQuickJoinClick}
           disabled={isSearching}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -101,7 +142,7 @@ export function HomeScreen({
         {/* Create Room & Enter Code Row */}
         <div className="grid grid-cols-2 gap-3">
           <motion.button
-            onClick={onCreateRoom}
+            onClick={handleCreateRoomClick}
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.4 }}
