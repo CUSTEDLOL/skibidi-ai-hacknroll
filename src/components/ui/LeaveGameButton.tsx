@@ -66,7 +66,7 @@ export function LeaveGameButton({ onLeave, className = "" }: LeaveGameButtonProp
                 </button>
                 <GlowButton
                   onClick={handleConfirmLeave}
-                  variant="destructive"
+                  variant="danger"
                   className="flex-1 text-sm"
                 >
                   CONFIRM LEAVE

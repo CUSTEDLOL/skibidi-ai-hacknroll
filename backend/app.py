@@ -160,19 +160,93 @@ def on_lobby_join(data):
     # Join the lobby room
     join_room(lobby_id)
 
+    # Check if player exists in lobby and mark as connected
+    lobby = lobbies[lobby_id]
+    player_found = False
+    player_name = None
+
+    for player in lobby['players']:
+        if player['playerId'] == user_id:
+            player['isConnected'] = True
+            player_name = player['playerName']
+            player_found = True
+            print(
+                f"Player {player_name} ({user_id}) connected to lobby {lobby_id}")
+            break
+
     # Send current state to just this socket
     emit("lobby:state", {"lobby": lobbies[lobby_id]})
 
-    # Also broadcast updated state to everyone (optional)
+    # Broadcast updated state to everyone in the lobby
     emit_lobby_state(lobby_id)
+
+    # Notify others if this is a reconnection or existing player connecting
+    if player_found and player_name:
+        socketio.emit("lobby:player_joined", {
+            "playerId": user_id,
+            "playerName": player_name,
+            "message": f"{player_name} connected to the lobby"
+        }, room=lobby_id, skip_sid=request.sid)
 
 
 @socketio.on("lobby:leave")
 def on_lobby_leave(data):
+    """
+    Client explicitly leaves the lobby (e.g., clicking Leave button)
+    """
     lobby_id = data.get("lobbyId")
-    if lobby_id:
-        leave_room(lobby_id)
-        emit_lobby_state(lobby_id)
+    if not lobby_id:
+        return
+
+    sid = request.sid
+    user_id = socket_user_map.get(sid)
+
+    if user_id and lobby_id in lobbies:
+        lobby = lobbies[lobby_id]
+
+        # Find and remove the player
+        for i, player in enumerate(lobby['players']):
+            if player['playerId'] == user_id:
+                player_name = player['playerName']
+
+                # Only remove player if lobby is in waiting state
+                if lobby['status'] == 'waiting':
+                    lobby['players'].pop(i)
+                    print(
+                        f"Player {player_name} ({user_id}) left lobby {lobby_id}")
+
+                    # Broadcast updated state
+                    if len(lobby['players']) > 0:
+                        emit_lobby_state(lobby_id)
+                        socketio.emit("lobby:player_left", {
+                            "playerId": user_id,
+                            "playerName": player_name,
+                            "message": f"{player_name} has left the lobby"
+                        }, room=lobby_id)
+                    else:
+                        # Clean up empty lobby
+                        lobby_code = lobby['lobbyCode']
+                        del lobbies[lobby_id]
+                        lobby_code_map.pop(lobby_code, None)
+                        print(
+                            f"Lobby {lobby_id} cleaned up (no players remaining)")
+                else:
+                    # During game, just mark as disconnected
+                    player['isConnected'] = False
+                    emit_lobby_state(lobby_id)
+                    socketio.emit("lobby:player_disconnected", {
+                        "playerId": user_id,
+                        "playerName": player_name,
+                        "message": f"{player_name} has left"
+                    }, room=lobby_id)
+
+                break
+
+        # Clean up socket mappings
+        user_socket_map.pop(user_id, None)
+        socket_user_map.pop(sid, None)
+
+    leave_room(lobby_id)
 
 
 # Debug ping/pong handlers for frontend socket testing
@@ -245,12 +319,17 @@ def join_lobby(lobby_code):
     # Use requested player name or generated userId as default
     player_name = requested_player_name.strip() if requested_player_name else user_id
 
+    # Add player to lobby - marked as not connected until they join via WebSocket
     lobby['players'].append({
         'playerId': user_id,
         'playerName': player_name,
         'role': None,
-        'isConnected': True
+        'isConnected': False  # Will be set to True when they connect via WebSocket
     })
+
+    print(f"Player {player_name} ({user_id}) added to lobby {lobby_id}")
+
+    # Broadcast updated lobby state to all connected clients
     emit_lobby_state(lobby_id)
 
     return jsonify({
@@ -279,13 +358,40 @@ def join_random_public_lobby():
     ]
 
     if not available_lobbies:
-        # No available lobbies, create a new one and return with instruction to join
+        # No available lobbies, create a new one
         lobby_result = create_lobby()
         lobby_data = lobby_result[0].get_json()
         lobby_code = lobby_data['lobbyCode']
+        lobby_id = lobby_data['lobbyId']
 
-        # Now join the created lobby
-        return join_lobby(lobby_code)
+        # Generate unique userId for this lobby
+        user_id = generate_user_id(lobby_id)
+
+        # Use requested player name or generated userId as default
+        player_name = requested_player_name.strip() if requested_player_name else user_id
+
+        # Add the first player (host) to the newly created lobby
+        # Mark as isConnected: True since they are about to connect via WebSocket
+        # This fixes the edge case where the host quick joins an empty lobby
+        lobby = lobbies[lobby_id]
+        lobby['players'].append({
+            'playerId': user_id,
+            'playerName': player_name,
+            'role': None,
+            'isConnected': True  # Host is immediately considered connected in quick join flow
+        })
+
+        print(
+            f"Player {player_name} ({user_id}) created and joined lobby {lobby_id} as host via quick join")
+
+        return jsonify({
+            'lobbyId': lobby_id,
+            'lobbyCode': lobby_code,
+            'userId': user_id,
+            'playerName': player_name,
+            'players': lobby['players'],
+            'message': f"{player_name} joined the lobby"
+        }), 200
 
     # Join the first available lobby
     lobby_id, lobby = available_lobbies[0]
@@ -297,12 +403,17 @@ def join_random_public_lobby():
     # Use requested player name or generated userId as default
     player_name = requested_player_name.strip() if requested_player_name else user_id
 
+    # Add player - marked as not connected until they join via WebSocket
     lobby['players'].append({
         'playerId': user_id,
         'playerName': player_name,
         'role': None,
-        'isConnected': True
+        'isConnected': False  # Will be set to True when they connect via WebSocket
     })
+
+    print(f"Player {player_name} ({user_id}) added to lobby {lobby_id}")
+
+    # Broadcast updated lobby state to all connected clients
     emit_lobby_state(lobby_id)
 
     return jsonify({
@@ -363,8 +474,27 @@ def start_game(lobby_id):
     game_id = str(uuid.uuid4())
     lobby['gameId'] = game_id
 
-    # TODO: Send WebSocket message to both players with their assigned roles
-    # socket.emit('role_assigned', {'role': role, 'gameConfig': game_config})
+    # Emit game started event to all players in the lobby with their roles
+    socketio.emit('game:started', {
+        'gameId': game_id,
+        'gameConfig': game_config,
+        'players': lobby['players'],
+        'message': 'Game has started'
+    }, room=lobby_id)
+
+    # Also emit individual role assignments to each player
+    for player in lobby['players']:
+        player_id = player['playerId']
+        player_sid = user_socket_map.get(player_id)
+        if player_sid:
+            socketio.emit('game:role_assigned', {
+                'role': player['role'],
+                'gameConfig': game_config,
+                'gameId': game_id
+            }, room=player_sid)
+
+    # Broadcast updated lobby state
+    emit_lobby_state(lobby_id)
 
     return jsonify({
         'gameId': game_id,

@@ -9,6 +9,7 @@ import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
 import { ChatPanel } from "@/components/ui/ChatPanel";
 import { PlayerLeaderboard } from "@/components/ui/PlayerLeaderboard";
 import { LeaveGameButton } from "@/components/ui/LeaveGameButton";
+import { EmotePanel } from "@/components/ui/EmotePanel";
 import { FileText, BarChart3, Calendar, User, MapPin, MessageSquare, HelpCircle } from "lucide-react";
 import { GlowButton } from "@/components/ui/GlowButton";
 import { toast } from "sonner";
@@ -325,6 +326,14 @@ const GuesserActive = () => {
                 </p>
               </div>
             </motion.div>
+
+             {/* Emote Panel */}
+             <EmotePanel 
+                lobbyId={lobbyId} 
+                playerId={playerId} 
+                className="flex-shrink-0"
+             />
+
           </div>
         </div>
       </div>

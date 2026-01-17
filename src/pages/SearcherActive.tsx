@@ -10,6 +10,7 @@ import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
 import { ChatPanel } from "@/components/ui/ChatPanel";
 import { PlayerLeaderboard } from "@/components/ui/PlayerLeaderboard";
 import { LeaveGameButton } from "@/components/ui/LeaveGameButton";
+import { EmotePanel } from "@/components/ui/EmotePanel";
 import { X, Search, Lightbulb, Send } from "lucide-react";
 import { GlowButton } from "@/components/ui/GlowButton";
 import { search, validateQuery, getRandomTopic, type SearchResponse } from "@/lib/api";
@@ -377,7 +378,7 @@ const SearcherActive = () => {
                 </div>
              </div>
 
-            {/* Search History */}
+             {/* Search History */}
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -411,6 +412,13 @@ const SearcherActive = () => {
                 </ul>
               )}
             </motion.div>
+
+             {/* Emote Panel */}
+             <EmotePanel 
+                lobbyId={lobbyId} 
+                playerId={playerId} 
+                className="flex-shrink-0"
+             />
 
           </div>
         </div>

@@ -599,6 +599,75 @@ def handle_get_room_state(data: dict):
     emit('room_state', get_room_state_for_client(room, request.sid))
 
 
+@socketio.on('chat:send')
+def handle_chat_send(data):
+    """Handle chat message from a player"""
+    try:
+        room_key = data.get('lobbyId')
+        message = data.get('message', '').strip()
+        
+        if not room_key or not message:
+            emit('error', {'message': 'Invalid chat data'})
+            return
+            
+        room = get_room(room_key)
+        player = get_player_in_room(room_key, request.sid)
+        
+        if not player:
+            emit('error', {'message': 'Player not in room'})
+            return
+            
+        # Create chat message
+        chat_msg = {
+            'id': str(int(time.time() * 1000)),
+            'playerId': request.sid,
+            'playerName': player.username,
+            'message': message,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Broadcast to all players in room
+        broadcast_to_room(room_key, 'chat:message', chat_msg)
+        
+    except Exception as e:
+        logger.error(f"Error in chat:send: {e}")
+        emit('error', {'message': 'Failed to send message'})
+
+
+@socketio.on('emote:send')
+def handle_emote_send(data):
+    """Handle emote reaction from a player"""
+    try:
+        room_key = data.get('lobbyId')
+        emote = data.get('emote', '').strip()
+        
+        if not room_key or not emote:
+            emit('error', {'message': 'Invalid emote data'})
+            return
+            
+        room = get_room(room_key)
+        player = get_player_in_room(room_key, request.sid)
+        
+        if not player:
+            emit('error', {'message': 'Player not in room'})
+            return
+            
+        # Create emote event
+        emote_data = {
+            'emote': emote,
+            'playerId': request.sid,
+            'playerName': player.username,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Broadcast to all players in room (including sender)
+        broadcast_to_room(room_key, 'emote:receive', emote_data)
+        
+    except Exception as e:
+        logger.error(f"Error in emote:send: {e}")
+        emit('error', {'message': 'Failed to send emote'})
+
+
 if __name__ == '__main__':
     print("Starting WebSocket server...")
     print(f"Google API Key configured: {bool(GOOGLE_API_KEY)}")
