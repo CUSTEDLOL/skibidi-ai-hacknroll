@@ -1,8 +1,11 @@
+import sys
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import os
 import uuid
 import string
 import random
+import logging
 from datetime import datetime
 from flask_socketio import SocketIO, join_room, leave_room, emit
 from typing import List
@@ -13,6 +16,7 @@ import threading
 from search_utils import (
     google_search,
     redact_with_gemini,
+    simple_redaction,
     validate_query_logic,
     get_random_topic_data,
     GOOGLE_API_KEY,
@@ -25,6 +29,16 @@ app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+# Configure logging
+logging.basicConfig(
+    filename='app.log',
+    level=logging.DEBUG,
+    format='%(asctime)s %(levelname)s %(name)s %(threadName)s : %(message)s'
+)
+
+# Redirect stdout to log file (capture any remaining print() statements)
+sys.stdout = open('app.log', 'a', buffering=1)
+sys.stderr = open('app.log', 'a', buffering=1)
 
 # ============ In-Memory Storage (replace with database later) ============
 lobbies = {}  # Store active lobbies
@@ -140,7 +154,7 @@ def timer_broadcast_thread(lobby_id):
 
 @socketio.on("connect")
 def on_connect():
-    print("Socket connected:", request.sid)
+    app.logger.info(f"Socket connected: {request.sid}")
 
 
 @socketio.on("disconnect")
@@ -165,7 +179,7 @@ def on_disconnect():
                     if lobby['status'] == 'waiting':
                         # In lobby: remove player entirely
                         lobby['players'].pop(i)
-                        print(
+                        app.logger.info(
                             f"Player {player_name} ({user_id}) left lobby {lobby_id}")
 
                         # Check if any players remain
@@ -181,13 +195,13 @@ def on_disconnect():
                             lobby_code = lobby['lobbyCode']
                             del lobbies[lobby_id]
                             lobby_code_map.pop(lobby_code, None)
-                            print(
+                            app.logger.info(
                                 f"Lobby {lobby_id} cleaned up (no players remaining)")
 
                     elif lobby['status'] == 'in_game':
                         # During game: mark as disconnected but keep in player list
                         player['isConnected'] = False
-                        print(
+                        app.logger.info(
                             f"Player {player_name} ({user_id}) disconnected during game in lobby {lobby_id}")
 
                         emit_lobby_state(lobby_id)
@@ -202,7 +216,7 @@ def on_disconnect():
             if player_found:
                 break
 
-    print("Socket disconnected:", sid)
+    app.logger.info(f"Socket disconnected: {sid}")
 
 
 @socketio.on("lobby:join")
@@ -239,7 +253,7 @@ def on_lobby_join(data):
             player['isConnected'] = True
             player_name = player['playerName']
             player_found = True
-            print(
+            app.logger.info(
                 f"Player {player_name} ({user_id}) connected to lobby {lobby_id}")
             break
 
@@ -281,7 +295,7 @@ def on_lobby_leave(data):
                 # Only remove player if lobby is in waiting state
                 if lobby['status'] == 'waiting':
                     lobby['players'].pop(i)
-                    print(
+                    app.logger.info(
                         f"Player {player_name} ({user_id}) left lobby {lobby_id}")
 
                     # Broadcast updated state
@@ -297,7 +311,7 @@ def on_lobby_leave(data):
                         lobby_code = lobby['lobbyCode']
                         del lobbies[lobby_id]
                         lobby_code_map.pop(lobby_code, None)
-                        print(
+                        app.logger.info(
                             f"Lobby {lobby_id} cleaned up (no players remaining)")
                 else:
                     # During game, just mark as disconnected
@@ -321,9 +335,170 @@ def on_lobby_leave(data):
 # Debug ping/pong handlers for frontend socket testing
 @socketio.on("ping")
 def handle_ping(data):
-    print("[SocketIO] Received ping from frontend:", data)
+    app.logger.debug(f"[SocketIO] Received ping from frontend: {data}")
     emit("pong", {"msg": "pong from backend", "time": data.get("time")})
     emit("debug", "Ping event received and pong sent.")
+
+
+# ============ Game WebSocket Handlers ============
+
+@socketio.on('searcher_make_search')
+def handle_searcher_make_search(data):
+    """Searcher makes a search query"""
+    app.logger.debug(f"\n========== searcher_make_search ==========")
+    app.logger.debug(f"Request from: {request.sid}")
+    app.logger.debug(f"Data received: {data}")
+
+    try:
+        # Note: frontend sends 'room_key'
+        lobby_id = data.get('room_key', '').strip()
+        search_query = data.get('query', '').strip()
+        secret_topic = data.get('secret_topic', '').strip()
+        forbidden_words = data.get('forbidden_words', [])
+
+        app.logger.debug(f"Lobby ID: {lobby_id}")
+        app.logger.debug(f"Search query: {search_query}")
+        app.logger.debug(f"Secret topic: {secret_topic}")
+        app.logger.debug(f"Forbidden words: {forbidden_words}")
+
+        if lobby_id not in lobbies:
+            app.logger.debug(f"ERROR: Lobby not found")
+            emit('error', {'message': 'Lobby not found'})
+            return
+
+        lobby = lobbies[lobby_id]
+
+        if not search_query:
+            app.logger.debug(f"ERROR: Empty search query")
+            emit('error', {'message': 'Search query is required'})
+            return
+
+        if not secret_topic:
+            app.logger.debug(f"ERROR: Missing secret topic")
+            emit('error', {'message': 'Secret topic is required'})
+            return
+
+        if not forbidden_words:
+            app.logger.debug(f"WARNING: No forbidden words provided")
+            forbidden_words = []
+
+        # Validate query doesn't contain forbidden words
+        validation_result = validate_query_logic(search_query, forbidden_words)
+        app.logger.debug(f"Validation result: {validation_result}")
+
+        if not validation_result['valid']:
+            app.logger.debug(
+                f"Query validation failed: {validation_result['violations']}")
+            emit('search_result', {
+                'query': search_query,
+                'results': [],
+                'valid': False,
+                'violations': validation_result['violations'],
+                'message': validation_result['message']
+            })
+            return
+
+        # Perform search
+        app.logger.debug(f"Performing Google search...")
+        results = google_search(search_query, num_results=5)
+        app.logger.debug(f"Google search returned: {len(results)} results")
+
+        if not results:
+            app.logger.debug(f"WARNING: No results from Google search")
+            emit('search_result', {
+                'query': search_query,
+                'results': [],
+                'count': 0,
+                'valid': True,
+                'query_index': 0,
+                'message': 'Search completed but no results found'
+            })
+            return
+
+        # Transform results to include redaction indicators
+        results_with_indicators = []
+        for result in results:
+            results_with_indicators.append({
+                'title': result.get('title', ''),
+                'snippet': result.get('snippet', ''),
+                'link': result.get('link', ''),
+                'displayLink': result.get('displayLink', ''),
+                # TODO: Implement redaction logic
+                'redactedTerms': {'title': [], 'snippet': []}
+            })
+
+        app.logger.debug(
+            f"Sending results with {len(results_with_indicators)} items")
+
+        # Send results back to searcher
+        emit('search_result', {
+            'query': search_query,
+            'results': results_with_indicators,
+            'count': len(results),
+            'valid': True,
+            'query_index': 0,
+            'message': f'Search completed: {len(results)} results'
+        })
+
+        app.logger.debug(f"Successfully emitted search_result")
+
+    except Exception as e:
+        app.logger.error(f"CRITICAL ERROR in handle_searcher_make_search: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            emit('error', {'message': f'Search failed: {str(e)}'})
+        except:
+            app.logger.error(f"FAILED TO EMIT ERROR MESSAGE")
+
+    app.logger.debug(f"========== searcher_make_search END ==========\n")
+
+
+@socketio.on('searcher_select_query')
+def handle_searcher_select_query(data):
+    """Searcher selects which query result to send to guessers"""
+    app.logger.debug(f"\n========== searcher_select_query ==========")
+    app.logger.debug(f"Request from: {request.sid}")
+    app.logger.debug(f"Data received: {data}")
+
+    try:
+        lobby_id = data.get('room_key', '').strip()
+        query_index = data.get('query_index')
+
+        app.logger.debug(f"Lobby ID: {lobby_id}")
+        app.logger.debug(f"Query index: {query_index}")
+
+        if lobby_id not in lobbies:
+            app.logger.debug(f"ERROR: Lobby not found")
+            emit('error', {'message': 'Lobby not found'})
+            return
+
+        lobby = lobbies[lobby_id]
+
+        # Notify searcher that query was selected
+        emit('query_selected', {
+            'query_index': query_index,
+            'message': 'Query selected and sent to guessers'
+        })
+
+        app.logger.debug(f"Notified searcher of selection")
+
+        # TODO: Send redacted results to guessers
+        # This would require storing search results in lobby state
+        # and implementing redaction logic
+
+    except Exception as e:
+        app.logger.error(
+            f"CRITICAL ERROR in handle_searcher_select_query: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            emit('error', {'message': f'Failed to select query: {str(e)}'})
+        except:
+            app.logger.error(f"FAILED TO EMIT ERROR MESSAGE")
+
+    app.logger.debug(f"========== searcher_select_query END ==========\n")
+
 
 # ============ Lobby Endpoints ============
 
@@ -397,7 +572,8 @@ def join_lobby(lobby_code):
         'isConnected': False  # Will be set to True when they connect via WebSocket
     })
 
-    print(f"Player {player_name} ({user_id}) added to lobby {lobby_id}")
+    app.logger.info(
+        f"Player {player_name} ({user_id}) added to lobby {lobby_id}")
 
     # Broadcast updated lobby state to all connected clients
     emit_lobby_state(lobby_id)
@@ -451,7 +627,7 @@ def join_random_public_lobby():
             'isConnected': True  # Host is immediately considered connected in quick join flow
         })
 
-        print(
+        app.logger.info(
             f"Player {player_name} ({user_id}) created and joined lobby {lobby_id} as host via quick join")
 
         return jsonify({
@@ -481,7 +657,8 @@ def join_random_public_lobby():
         'isConnected': False  # Will be set to True when they connect via WebSocket
     })
 
-    print(f"Player {player_name} ({user_id}) added to lobby {lobby_id}")
+    app.logger.info(
+        f"Player {player_name} ({user_id}) added to lobby {lobby_id}")
 
     # Broadcast updated lobby state to all connected clients
     emit_lobby_state(lobby_id)
@@ -919,4 +1096,6 @@ def health_check():
 
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_ENV') == 'development'
+    socketio.run(app, debug=debug, host='0.0.0.0', port=port)

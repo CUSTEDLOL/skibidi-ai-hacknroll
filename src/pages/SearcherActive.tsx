@@ -14,7 +14,7 @@ import { ChatPanel } from "@/components/ui/ChatPanel";
 import { PlayerLeaderboard } from "@/components/ui/PlayerLeaderboard";
 import { LeaveGameButton } from "@/components/ui/LeaveGameButton";
 import { EmotePanel } from "@/components/ui/EmotePanel";
-import { X, Search, Lightbulb, Send } from "lucide-react";
+import { X, Search, Lightbulb, Send, History } from "lucide-react";
 import { GlowButton } from "@/components/ui/GlowButton";
 import {
   search,
@@ -28,6 +28,13 @@ import {
   getOrCreatePlayerName,
   type Player,
 } from "@/lib/playerUtils";
+import { socket } from "@/socket";
+
+interface RedactedTerm {
+  start: number;
+  end: number;
+  word: string;
+}
 
 interface SearchResultData {
   source: string;
@@ -36,6 +43,10 @@ interface SearchResultData {
   confidence: number;
   link?: string;
   displayLink?: string;
+  redactedTerms?: {
+    title: RedactedTerm[];
+    snippet: RedactedTerm[];
+  };
 }
 
 interface SearchHistoryItem {
@@ -59,21 +70,8 @@ const SearcherActive = () => {
   const playerId = getOrCreatePlayerId();
   const playerName = getOrCreatePlayerName();
 
-  // Get lobbyId from location state or fallback to current_lobby_settings
-  const getLobbyId = (): string | null => {
-    const stateId = (location.state as any)?.lobbyId;
-    if (stateId) return stateId;
-
-    const settings = localStorage.getItem("current_lobby_settings");
-    if (settings) {
-      const parsed = JSON.parse(settings);
-      return parsed.lobbyId || null;
-    }
-    return null;
-  };
-
-  const lobbyId = getLobbyId();
-
+  // Get lobby context from navigation state
+  const lobbyId = (location.state as any)?.lobbyId;
   const [players, setPlayers] = useState<Player[]>([
     {
       id: playerId,
@@ -120,11 +118,89 @@ const SearcherActive = () => {
 
   const searchesRemaining = maxSearches - searchHistory.length;
 
+  // Check if lobbyId is missing and redirect
+  useEffect(() => {
+    if (!lobbyId) {
+      toast.error("Missing lobby information. Please restart the game.");
+      navigate("/");
+    }
+  }, [lobbyId, navigate]);
+
+  // WebSocket event listeners
+  useEffect(() => {
+    // Listen for search results from backend
+    const handleSearchResult = (data: {
+      query: string;
+      results: any[];
+      count: number;
+      valid: boolean;
+      query_index: number;
+      message?: string;
+      violations?: string[];
+    }) => {
+      if (!data.valid) {
+        toast.error(data.message || "Invalid search query");
+        setIsSearching(false);
+        return;
+      }
+
+      // Transform results to match our UI format
+      const transformedResults: SearchResultData[] = data.results.map(
+        (result, index) => ({
+          source: result.displayLink || new URL(result.link || "").hostname,
+          title: result.title || "",
+          snippet: result.snippet || "",
+          confidence: 85 - index * 5,
+          link: result.link,
+          displayLink: result.displayLink,
+          redactedTerms: result.redactedTerms, // Include redaction indicators
+        }),
+      );
+
+      // Add to search history
+      const historyItem: SearchHistoryItem = {
+        query: data.query,
+        results: transformedResults,
+        timestamp: Date.now(),
+      };
+
+      setSearchHistory((prev) => [...prev, historyItem]);
+      setCurrentResults(transformedResults);
+      setIsSearching(false);
+      setShowResults(true);
+      setSelectedQueryIndex(data.query_index);
+      toast.success(`Found ${data.count} results`);
+    };
+
+    const handleQuerySelected = (data: {
+      query_index: number;
+      sent_results: number[];
+      message: string;
+    }) => {
+      toast.success(data.message);
+    };
+
+    const handleError = (data: { message: string }) => {
+      toast.error(data.message);
+      setIsSearching(false);
+    };
+
+    socket.on("search_result", handleSearchResult);
+    socket.on("query_selected", handleQuerySelected);
+    socket.on("error", handleError);
+
+    return () => {
+      socket.off("search_result", handleSearchResult);
+      socket.off("query_selected", handleQuerySelected);
+      socket.off("error", handleError);
+    };
+  }, [searchHistory.length]);
+
   useEffect(() => {
     // If we have initial search results passed from topic selection, perform a "silent" search
     if (initialSearchResults && searchHistory.length === 0) {
       const transformedResults = initialSearchResults.map(
-        (r: any, i: number) => ({
+        (r: Record<string, any>, i: number) => ({
           source: new URL(r.url).hostname,
           title: r.title,
           snippet: r.snippet,
@@ -135,38 +211,10 @@ const SearcherActive = () => {
 
       setCurrentResults(transformedResults);
       setShowResults(true);
-      // Don't add to history or decrease search count for the initial auto-search?
-      // Or maybe we treat it as a freebie. For now, let's just display it.
     }
   }, []);
 
-  // If no topic provided, fetch one
-  useEffect(() => {
-    if (!location.state?.secretTopic && !initialSearchResults) {
-      getRandomTopic()
-        .then((topicData) => {
-          // Store in location state or use it directly
-        })
-        .catch((error) => {
-          console.error("Failed to get topic:", error);
-        });
-    }
-  }, []);
-
-  // Redirect if no lobbyId found
-  useEffect(() => {
-    if (!lobbyId) {
-      toast.error("No active game found. Please join or create a lobby.");
-      navigate("/");
-    }
-  }, [lobbyId, navigate]);
-
-  // Return early if no lobbyId (after all hooks)
-  if (!lobbyId) {
-    return null;
-  }
-
-  const handleSearch = async (query: string) => {
+  const handleSearch = (query: string) => {
     if (searchesRemaining <= 0) {
       toast.error("No searches remaining");
       return;
@@ -175,87 +223,48 @@ const SearcherActive = () => {
     setIsSearching(true);
     setShowResults(false);
 
-    try {
-      // First validate the query
-      const validation = await validateQuery({
-        query,
-        forbidden_words: forbiddenWords,
-      });
-
-      if (!validation.valid) {
-        toast.error(validation.message);
-        setIsSearching(false);
-        return;
-      }
-
-      // Perform the search
-      const searchResponse: SearchResponse = await search({ query });
-
-      // Transform results to match our UI format
-      const transformedResults: SearchResultData[] = searchResponse.results.map(
-        (result, index) => ({
-          source: result.displayLink || new URL(result.link).hostname,
-          title: result.title,
-          snippet: result.snippet,
-          confidence: 85 - index * 5, // Mock confidence based on order
-          link: result.link,
-          displayLink: result.displayLink,
-        }),
-      );
-
-      // Add to search history
-      const historyItem: SearchHistoryItem = {
-        query,
-        results: transformedResults,
-        timestamp: Date.now(),
-      };
-
-      setSearchHistory((prev) => [...prev, historyItem]);
-      setCurrentResults(transformedResults);
-      setIsSearching(false);
-      setShowResults(true);
-      setSelectedQueryIndex(searchHistory.length); // Index of the newly added search
-    } catch (error: any) {
-      console.error("Search failed:", error);
-      toast.error(error.message || "Search failed");
-      setIsSearching(false);
-    }
+    // Use WebSocket to perform search with topic and forbidden words
+    socket.emit("searcher_make_search", {
+      room_key: lobbyId,
+      query: query,
+      secret_topic: secretTopic,
+      forbidden_words: forbiddenWords,
+    });
   };
 
   const handleSubmitToGuesser = () => {
-    if (selectedQueryIndex === null && !initialSearchResults) {
-      // if no search made yet, cant submit
+    if (selectedQueryIndex === null) {
       if (searchHistory.length === 0) {
         toast.error("Make a search first!");
         return;
       }
+      // Auto-select the last search if none selected
+      setSelectedQueryIndex(searchHistory.length - 1);
     }
 
-    // Determine what to send: either selected history item OR current results (if initial)
-    let selectedResults = currentResults;
-    let selectedQuery = "Initial Intelligence";
+    const indexToSend =
+      selectedQueryIndex !== null
+        ? selectedQueryIndex
+        : searchHistory.length - 1;
 
-    if (selectedQueryIndex !== null && searchHistory[selectedQueryIndex]) {
-      selectedResults = searchHistory[selectedQueryIndex].results;
-      selectedQuery = searchHistory[selectedQueryIndex].query;
-    } else if (initialSearchResults && searchHistory.length === 0) {
-      // sending initial results
-    } else {
-      toast.error("Please select a search result to send");
-      return;
-    }
+    // Use WebSocket to select and send query to guessers
+    socket.emit("searcher_select_query", {
+      room_key: lobbyId,
+      query_index: indexToSend,
+    });
 
-    // In a real app, this would send results to the backend/guesser via WebSocket
-    // For now, navigate to round result
+    toast.info("Sending to guessers...");
+  };
 
-    // Store the selected search in location state for the next screen
-    navigate("/game/round-result", {
-      state: {
-        selectedQuery,
-        selectedResults,
-        secretTopic,
-        round,
-      },
+  const handleSelectQuery = (index: number) => {
+    setSelectedQueryIndex(index);
+    setCurrentResults(searchHistory[index].results);
+    setShowResults(true);
+
+    // Auto-send when clicked
+    socket.emit("searcher_select_query", {
+      room_key: lobbyId,
+      query_index: index,
     });
   };
 
@@ -283,12 +292,6 @@ const SearcherActive = () => {
     });
   };
 
-  const handleSelectQuery = (index: number) => {
-    setSelectedQueryIndex(index);
-    setCurrentResults(searchHistory[index].results);
-    setShowResults(true);
-  };
-
   return (
     <div className="min-h-screen scanlines">
       <Background />
@@ -311,12 +314,7 @@ const SearcherActive = () => {
               <span className="text-primary">{searchesRemaining}</span>
             </div>
           </div>
-          <Timer
-            lobbyId={lobbyId}
-            initialSeconds={timeLimit}
-            onComplete={handleTimeUp}
-            size="md"
-          />
+          <Timer seconds={timeLimit} onComplete={handleTimeUp} size="md" />
           <ClassifiedStamp
             type="classified"
             className="text-xs"
@@ -418,6 +416,9 @@ const SearcherActive = () => {
                       snippet={result.snippet}
                       confidence={result.confidence / 100}
                       delay={index * 0.1}
+                      redactedTerms={result.redactedTerms}
+                      isSelected={selectedQueryIndex === index}
+                      onClick={() => handleSelectQuery(index)}
                     />
                   ))}
 
@@ -475,8 +476,8 @@ const SearcherActive = () => {
               className="bg-card border border-border rounded-lg p-4 flex-shrink-0"
             >
               <div className="flex items-center gap-2 mb-3">
-                <Search className="w-4 h-4 text-primary" />
-                <span className="font-mono text-sm font-bold">
+                <History className="w-4 h-4 text-muted-foreground" />
+                <span className="font-mono text-sm text-muted-foreground">
                   SEARCH HISTORY
                 </span>
               </div>
@@ -504,6 +505,25 @@ const SearcherActive = () => {
                   ))}
                 </ul>
               )}
+            </motion.div>
+
+            {/* Tips */}
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.5 }}
+              className="bg-card border border-border rounded-lg p-4 flex-shrink-0"
+            >
+              <div className="flex items-center gap-2 mb-4">
+                <Lightbulb className="w-4 h-4 text-accent" />
+                <span className="font-mono text-sm text-accent">TIPS</span>
+              </div>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li>• Try related terms and synonyms</li>
+                <li>• Think laterally about the topic</li>
+                <li>• Consider historical context</li>
+                <li>• Use descriptive adjectives</li>
+              </ul>
             </motion.div>
 
             {/* Emote Panel */}

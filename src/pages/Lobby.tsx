@@ -253,14 +253,16 @@ const Lobby = () => {
         if (myPlayer.role === "searcher") {
           navigate("/game/searcher-briefing", {
             state: {
-              lobbyId: actualLobbyId,
+              lobbyId: lobbyIdRef.current,
+              lobbyCode: code,
               gameConfig: data.gameConfig,
             },
           });
         } else if (myPlayer.role === "guesser") {
           navigate("/game/guesser-active", {
             state: {
-              lobbyId: actualLobbyId,
+              lobbyId: lobbyIdRef.current,
+              lobbyCode: code,
               gameConfig: data.gameConfig,
             },
           });
@@ -376,15 +378,17 @@ const Lobby = () => {
       if (myPlayer?.role === "searcher") {
         navigate("/game/searcher-briefing", {
           state: {
-            lobbyId: actualLobbyId,
-            gameConfig: result.gameConfig,
+            lobbyId: lobbyIdRef.current,
+            lobbyCode: code,
+            gameConfig: gameConfig,
           },
         });
       } else if (myPlayer?.role === "guesser") {
         navigate("/game/guesser-active", {
           state: {
-            lobbyId: actualLobbyId,
-            gameConfig: result.gameConfig,
+            lobbyId: lobbyIdRef.current,
+            lobbyCode: code,
+            gameConfig: gameConfig,
           },
         });
       } else {

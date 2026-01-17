@@ -1,20 +1,24 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Background } from "@/components/layout/Background";
 import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
 import { GlowButton } from "@/components/ui/GlowButton";
 import { getRandomTopics, TopicData } from "@/lib/topicData";
 import { Target, AlertTriangle, Fingerprint } from "lucide-react";
-import { selectTopic } from "@/lib/api";
 import { toast } from "sonner";
-import { getOrCreatePlayerId } from "@/lib/playerUtils";
 
 const SearcherBriefing = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [topics, setTopics] = useState<TopicData[]>([]);
   const [selectedTopic, setSelectedTopic] = useState<TopicData | null>(null);
+
+  // Get lobby context from navigation state
+  const lobbyId = (location.state as any)?.lobbyId;
+  const lobbyCode = (location.state as any)?.lobbyCode;
+  const gameConfig = (location.state as any)?.gameConfig;
 
   useEffect(() => {
     // Fetch random topics from our static DB
@@ -29,52 +33,27 @@ const SearcherBriefing = () => {
   const handleConfirmMission = async () => {
     if (!selectedTopic) return;
 
-    // Get lobbyId from current_lobby_settings
-    const settings = localStorage.getItem("current_lobby_settings");
-    let lobbyId = null;
-    if (settings) {
-      const parsed = JSON.parse(settings);
-      lobbyId = parsed.lobbyId;
-    }
-
+    // Verify we have lobby context
     if (!lobbyId) {
-      // No lobbyId found, redirect to home
+      toast.error("Missing lobby information. Please restart the game.");
       navigate("/");
       return;
     }
 
-    try {
-      const playerId = getOrCreatePlayerId();
-
-      // Call backend to initialize round and start timer
-      const result = await selectTopic({
-        lobbyId,
-        userId: playerId,
-        topic: selectedTopic.title,
+    // Navigate to SearcherActive with the selected topic AND pregenerated results
+    navigate("/game/searcher-active", {
+      state: {
+        secretTopic: selectedTopic.title,
         forbiddenWords: selectedTopic.forbiddenWords,
-        roundNumber: 1,
-        timeLimit: 120,
-      });
-
-      // Navigate to SearcherActive with the selected topic and real backend results
-      navigate("/game/searcher-active", {
-        state: {
-          secretTopic: selectedTopic.title,
-          forbiddenWords: selectedTopic.forbiddenWords,
-          initialSearchResults: result.initialResults,
-          round: 1,
-          totalRounds: 5,
-          timeLimit: 120,
-          maxSearches: 5,
-          lobbyId,
-        },
-      });
-    } catch (error: any) {
-      console.error("Failed to start mission:", error);
-      toast.error(
-        error.message || "Failed to start mission. Please try again.",
-      );
-    }
+        initialSearchResults: selectedTopic.pregeneratedResults,
+        round: 1, // To do: get from global state
+        totalRounds: gameConfig?.rounds || 5,
+        timeLimit: gameConfig?.timePerRound || 120,
+        maxSearches: 5,
+        lobbyId: lobbyId,
+        lobbyCode: lobbyCode,
+      },
+    });
   };
 
   return (

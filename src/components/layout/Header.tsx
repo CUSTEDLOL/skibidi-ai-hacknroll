@@ -1,9 +1,9 @@
 import { motion } from "framer-motion";
-import { User, Trophy, Volume2, VolumeX, Settings } from "lucide-react";
-import { useState } from "react";
+import { User, Trophy, Volume2, VolumeX } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { GlitchText } from "../ui/GlitchText";
 import { XPBar } from "../ui/StatCard";
+import { useAudio } from "@/contexts/AudioContext";
 
 interface HeaderProps {
   username?: string;
@@ -24,7 +24,7 @@ export function Header({
   losses,
   isLoggedIn = false,
 }: HeaderProps) {
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const { isMuted, toggleMute } = useAudio();
   const navigate = useNavigate();
 
   const hasStats = wins !== undefined && losses !== undefined;
@@ -75,12 +75,12 @@ export function Header({
 
           {/* Sound Toggle */}
           <motion.button
-            onClick={() => setSoundEnabled(!soundEnabled)}
+            onClick={toggleMute}
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             className="p-2 rounded-lg bg-card border border-border hover:border-primary/50 transition-colors"
           >
-            {soundEnabled ? (
+            {!isMuted ? (
               <Volume2 className="w-4 h-4 text-primary" />
             ) : (
               <VolumeX className="w-4 h-4 text-muted-foreground" />
