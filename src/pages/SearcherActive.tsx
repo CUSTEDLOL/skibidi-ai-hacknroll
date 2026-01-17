@@ -70,8 +70,21 @@ const SearcherActive = () => {
   const playerId = getOrCreatePlayerId();
   const playerName = getOrCreatePlayerName();
 
-  // Get lobby context from navigation state
-  const lobbyId = (location.state as any)?.lobbyId;
+  // Get lobbyId from location state or fallback to current_lobby_settings
+  const getLobbyId = (): string | null => {
+    const stateId = (location.state as any)?.lobbyId;
+    if (stateId) return stateId;
+
+    const settings = localStorage.getItem("current_lobby_settings");
+    if (settings) {
+      const parsed = JSON.parse(settings);
+      return parsed.lobbyId || null;
+    }
+    return null;
+  };
+
+  const lobbyId = getLobbyId();
+
   const [players, setPlayers] = useState<Player[]>([
     {
       id: playerId,
@@ -214,6 +227,11 @@ const SearcherActive = () => {
     }
   }, []);
 
+  // Return early if no lobbyId (after all hooks)
+  if (!lobbyId) {
+    return null;
+  }
+
   const handleSearch = (query: string) => {
     if (searchesRemaining <= 0) {
       toast.error("No searches remaining");
@@ -314,7 +332,12 @@ const SearcherActive = () => {
               <span className="text-primary">{searchesRemaining}</span>
             </div>
           </div>
-          <Timer seconds={timeLimit} onComplete={handleTimeUp} size="md" />
+          <Timer
+            lobbyId={lobbyId}
+            initialSeconds={timeLimit}
+            onComplete={handleTimeUp}
+            size="md"
+          />
           <ClassifiedStamp
             type="classified"
             className="text-xs"
