@@ -53,6 +53,7 @@ cd backend
 
 # Create virtual environment
 python -m venv venv
+# Or use uv venv
 
 # Activate virtual environment
 # On macOS/Linux:
@@ -62,6 +63,7 @@ venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+# If using uv: uv pip install -r requirements.txt
 
 # Copy environment variables
 cp .env.example .env
@@ -72,6 +74,7 @@ cp .env.example .env
 
 # Start the server
 python app.py
+# If using uv: uv run python app.py
 ```
 
 The backend will be available at `http://localhost:5000`
