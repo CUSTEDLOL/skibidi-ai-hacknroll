@@ -353,13 +353,9 @@ def handle_searcher_make_search(data):
         # Note: frontend sends 'room_key'
         lobby_id = data.get('room_key', '').strip()
         search_query = data.get('query', '').strip()
-        secret_topic = data.get('secret_topic', '').strip()
-        forbidden_words = data.get('forbidden_words', [])
 
         app.logger.debug(f"Lobby ID: {lobby_id}")
         app.logger.debug(f"Search query: {search_query}")
-        app.logger.debug(f"Secret topic: {secret_topic}")
-        app.logger.debug(f"Forbidden words: {forbidden_words}")
 
         if lobby_id not in lobbies:
             app.logger.debug(f"ERROR: Lobby not found")
@@ -368,19 +364,23 @@ def handle_searcher_make_search(data):
 
         lobby = lobbies[lobby_id]
 
+        # Get topic and forbidden words from server state instead of client
+        round_state = lobby.get('roundState')
+        if not round_state:
+            app.logger.debug(f"ERROR: No active round found")
+            emit('error', {'message': 'No active round found'})
+            return
+
+        secret_topic = round_state.get('topic')
+        forbidden_words = round_state.get('forbiddenWords', [])
+
+        app.logger.debug(f"Server-side Secret topic: {secret_topic}")
+        app.logger.debug(f"Server-side Forbidden words: {forbidden_words}")
+
         if not search_query:
             app.logger.debug(f"ERROR: Empty search query")
             emit('error', {'message': 'Search query is required'})
             return
-
-        if not secret_topic:
-            app.logger.debug(f"ERROR: Missing secret topic")
-            emit('error', {'message': 'Secret topic is required'})
-            return
-
-        if not forbidden_words:
-            app.logger.debug(f"WARNING: No forbidden words provided")
-            forbidden_words = []
 
         # Validate query doesn't contain forbidden words
         validation_result = validate_query_logic(search_query, forbidden_words)
