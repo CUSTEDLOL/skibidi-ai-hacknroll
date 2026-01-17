@@ -20,7 +20,7 @@ except ImportError:
     print("Warning: google-api-python-client not installed. Google Search will not work.")
 
 try:
-    import google.generativeai as genai
+    import google.genai as genai
     if GEMINI_API_KEY:
         genai.configure(api_key=GEMINI_API_KEY)
         model = genai.GenerativeModel('gemini-pro')
