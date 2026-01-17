@@ -51,10 +51,9 @@ export function HomeScreen({
         <GlowButton 
           onClick={onStartGame} 
           variant="primary" 
-          size="lg" 
-          pulse 
+          size="lg"
           icon={<Play className="w-5 h-5" />}
-          className="w-full"
+          className="w-full animate-pulse-glow"
         >
           Start New Game
         </GlowButton>

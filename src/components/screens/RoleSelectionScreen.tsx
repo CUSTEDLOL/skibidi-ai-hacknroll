@@ -41,13 +41,11 @@ export function RoleSelectionScreen({ onBack, onContinue }: RoleSelectionScreenP
           role="searcher"
           selected={selectedRole === "searcher"}
           onClick={() => setSelectedRole("searcher")}
-          difficulty={3}
         />
         <RoleCard
           role="guesser"
           selected={selectedRole === "guesser"}
           onClick={() => setSelectedRole("guesser")}
-          difficulty={4}
         />
       </motion.div>
 
