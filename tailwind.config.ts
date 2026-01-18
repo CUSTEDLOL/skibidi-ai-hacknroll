@@ -16,6 +16,7 @@ export default {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
+        display: ['Orbitron', 'sans-serif'],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -124,11 +125,12 @@ export default {
         "float": "float 3s ease-in-out infinite",
       },
       backgroundImage: {
-        'grid-pattern': 'linear-gradient(to right, hsl(180 20% 20% / 0.1) 1px, transparent 1px), linear-gradient(to bottom, hsl(180 20% 20% / 0.1) 1px, transparent 1px)',
-        'radial-glow': 'radial-gradient(ellipse at center, hsl(180 100% 50% / 0.1) 0%, transparent 70%)',
+        'grid-pattern': 'linear-gradient(to right, hsl(180 25% 16% / 0.15) 1px, transparent 1px), linear-gradient(to bottom, hsl(180 25% 16% / 0.15) 1px, transparent 1px)',
+        'radial-glow': 'radial-gradient(ellipse at center, hsl(175 100% 45% / 0.12) 0%, transparent 60%)',
+        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
       },
       backgroundSize: {
-        'grid': '40px 40px',
+        'grid': '50px 50px',
       },
     },
   },

@@ -3,60 +3,140 @@ import { motion } from "framer-motion";
 export function Background() {
   return (
     <div className="fixed inset-0 -z-10 overflow-hidden">
-      {/* Base gradient */}
-      <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-background" />
+      {/* Base gradient - deeper and more atmospheric */}
+      <div className="absolute inset-0 bg-gradient-to-b from-background via-background to-[hsl(220_20%_2%)]" />
       
-      {/* Grid pattern */}
-      <div className="absolute inset-0 bg-grid-pattern bg-grid opacity-30" />
+      {/* Animated gradient orbs */}
+      <motion.div
+        animate={{
+          scale: [1, 1.2, 1],
+          opacity: [0.15, 0.25, 0.15],
+        }}
+        transition={{
+          duration: 8,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="absolute -top-1/4 -left-1/4 w-[800px] h-[800px] rounded-full bg-gradient-radial from-primary/20 via-primary/5 to-transparent blur-3xl"
+      />
+      <motion.div
+        animate={{
+          scale: [1.2, 1, 1.2],
+          opacity: [0.1, 0.2, 0.1],
+        }}
+        transition={{
+          duration: 10,
+          repeat: Infinity,
+          ease: "easeInOut",
+          delay: 2,
+        }}
+        className="absolute -bottom-1/4 -right-1/4 w-[600px] h-[600px] rounded-full bg-gradient-radial from-accent/15 via-accent/5 to-transparent blur-3xl"
+      />
       
-      {/* Radial glow */}
-      <div className="absolute inset-0 bg-radial-glow" />
+      {/* Grid pattern with gradient fade */}
+      <div className="absolute inset-0 bg-grid-pattern bg-grid opacity-20" />
+      <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background" />
       
-      {/* Animated floating documents */}
+      {/* Radial glow from center */}
+      <div className="absolute inset-0 bg-radial-glow opacity-50" />
+      
+      {/* Animated particles */}
       <div className="absolute inset-0 overflow-hidden">
-        {Array.from({ length: 8 }).map((_, i) => (
+        {Array.from({ length: 20 }).map((_, i) => (
           <motion.div
             key={i}
             initial={{ 
               y: "100vh", 
-              x: `${10 + i * 12}%`,
-              rotate: Math.random() * 20 - 10,
-              opacity: 0.1
+              x: `${Math.random() * 100}%`,
+              opacity: 0,
             }}
             animate={{ 
-              y: "-100vh",
-              rotate: Math.random() * 20 - 10,
+              y: "-10vh",
+              opacity: [0, 0.6, 0],
             }}
             transition={{
-              duration: 20 + Math.random() * 10,
+              duration: 15 + Math.random() * 10,
               repeat: Infinity,
-              delay: i * 2,
-              ease: "linear"
+              delay: i * 1.5,
+              ease: "linear",
             }}
-            className="absolute w-16 h-20 pointer-events-none"
+            className="absolute w-1 h-1 rounded-full bg-primary/60"
+            style={{
+              boxShadow: '0 0 6px hsl(175 100% 45% / 0.8)',
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Floating document cards - more subtle and elegant */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <motion.div
+            key={i}
+            initial={{ 
+              y: "110vh", 
+              x: `${15 + i * 18}%`,
+              rotate: -5 + Math.random() * 10,
+              opacity: 0,
+            }}
+            animate={{ 
+              y: "-20vh",
+              rotate: [-5, 5, -5],
+              opacity: [0, 0.08, 0],
+            }}
+            transition={{
+              duration: 25 + Math.random() * 10,
+              repeat: Infinity,
+              delay: i * 4,
+              ease: "linear",
+            }}
+            className="absolute w-12 h-16"
           >
-            {/* Mini document */}
-            <div className="w-full h-full bg-card/30 border border-border/30 rounded-sm p-1">
-              <div className="w-full h-1 bg-muted mb-1" />
-              <div className="w-3/4 h-1 bg-muted mb-1" />
-              <div className="w-full h-1 bg-muted mb-1" />
-              <div className="w-1/2 h-1 bg-muted" />
-              <div className="absolute top-1 right-1 w-4 h-4 border border-destructive/30 text-[6px] font-bold text-destructive/30 flex items-center justify-center">
-                C
+            {/* Minimalist document */}
+            <div className="w-full h-full bg-card/40 backdrop-blur-sm border border-primary/10 rounded-sm p-1.5 shadow-lg">
+              <div className="w-full h-0.5 bg-primary/20 mb-1 rounded-full" />
+              <div className="w-3/4 h-0.5 bg-muted/30 mb-1 rounded-full" />
+              <div className="w-full h-0.5 bg-muted/30 mb-1 rounded-full" />
+              <div className="w-2/3 h-0.5 bg-muted/30 rounded-full" />
+              <div className="absolute top-0.5 right-0.5 w-2 h-2 border border-destructive/20 rounded-sm flex items-center justify-center">
+                <span className="text-[4px] font-bold text-destructive/30">C</span>
               </div>
             </div>
           </motion.div>
         ))}
       </div>
 
-      {/* Scanlines overlay - Subtle */}
-      <div className="absolute inset-0 pointer-events-none scanlines opacity-[0.1]" />
-      
-      {/* Noise texture */}
-      <div className="absolute inset-0 pointer-events-none noise-overlay opacity-[0.02]" />
+      {/* Horizontal scan line effect */}
+      <motion.div
+        animate={{
+          y: ["-100%", "200%"],
+        }}
+        transition={{
+          duration: 8,
+          repeat: Infinity,
+          ease: "linear",
+        }}
+        className="absolute inset-x-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent"
+      />
 
-      {/* Vignette effect */}
-      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_center,transparent_0%,hsl(0_0%_4%)_100%)]" />
+      {/* Corner accents */}
+      <div className="absolute top-0 left-0 w-32 h-32 border-l-2 border-t-2 border-primary/10 rounded-tl-3xl" />
+      <div className="absolute top-0 right-0 w-32 h-32 border-r-2 border-t-2 border-primary/10 rounded-tr-3xl" />
+      <div className="absolute bottom-0 left-0 w-32 h-32 border-l-2 border-b-2 border-primary/10 rounded-bl-3xl" />
+      <div className="absolute bottom-0 right-0 w-32 h-32 border-r-2 border-b-2 border-primary/10 rounded-br-3xl" />
+
+      {/* Subtle scanlines */}
+      <div className="absolute inset-0 pointer-events-none opacity-[0.03]" 
+        style={{
+          backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, hsl(175 100% 45% / 0.1) 2px, hsl(175 100% 45% / 0.1) 4px)',
+        }}
+      />
+      
+      {/* Noise texture - very subtle */}
+      <div className="absolute inset-0 pointer-events-none noise-overlay opacity-[0.015]" />
+
+      {/* Vignette effect - stronger for drama */}
+      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_center,transparent_0%,transparent_50%,hsl(220_15%_3%/0.8)_100%)]" />
     </div>
   );
 }
