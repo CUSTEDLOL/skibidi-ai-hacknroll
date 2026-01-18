@@ -12,11 +12,6 @@ import { LeaveGameButton } from "@/components/ui/LeaveGameButton";
 import { EmotePanel } from "@/components/ui/EmotePanel";
 import {
   FileText,
-  BarChart3,
-  Calendar,
-  User,
-  MapPin,
-  MessageSquare,
   HelpCircle,
   CheckCircle,
   Loader2,
@@ -32,11 +27,6 @@ import { makeGuess, getLobby } from "@/lib/api";
 import { socket } from "@/socket";
 import { useAudio } from "@/contexts/AudioContext";
 
-interface ExtractedClue {
-  type: "date" | "person" | "location" | "quote";
-  value: string;
-  icon: React.ReactNode;
-}
 
 interface RedactedResult {
   source: string;
@@ -239,58 +229,6 @@ const GuesserActive = () => {
     return null;
   }
 
-  // Extract clues from redacted results (simple extraction for demo)
-  const extractedClues: ExtractedClue[] = [];
-  redactedResults.forEach((result) => {
-    const text = `${result.title} ${result.snippet}`;
-
-    // Extract dates (4-digit years)
-    const yearMatch = text.match(/\b(19|20)\d{2}\b/);
-    if (
-      yearMatch &&
-      !extractedClues.find((c) => c.type === "date" && c.value === yearMatch[0])
-    ) {
-      extractedClues.push({
-        type: "date",
-        value: yearMatch[0],
-        icon: <Calendar className="w-4 h-4" />,
-      });
-    }
-
-    // Extract locations (capitalized words that might be places)
-    const locationMatch = text.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b/);
-    if (
-      locationMatch &&
-      locationMatch[0].length > 3 &&
-      !extractedClues.find(
-        (c) => c.type === "location" && c.value === locationMatch[0],
-      )
-    ) {
-      extractedClues.push({
-        type: "location",
-        value: locationMatch[0],
-        icon: <MapPin className="w-4 h-4" />,
-      });
-    }
-  });
-
-  // Add some default clues if none extracted
-  if (extractedClues.length === 0) {
-    extractedClues.push(
-      { type: "date", value: "1969", icon: <Calendar className="w-4 h-4" /> },
-      { type: "person", value: "NASA", icon: <User className="w-4 h-4" /> },
-      {
-        type: "location",
-        value: "Tranquility Base",
-        icon: <MapPin className="w-4 h-4" />,
-      },
-      {
-        type: "quote",
-        value: "Eagle has landed",
-        icon: <MessageSquare className="w-4 h-4" />,
-      },
-    );
-  }
 
   const handleGuess = async (guess: string) => {
     if (guessHistory.includes(guess)) {
@@ -530,44 +468,6 @@ const GuesserActive = () => {
               className="flex-shrink-0"
             />
 
-            {/* Extracted Intel */}
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.3 }}
-              className="bg-card border border-border rounded-lg p-4 flex-1"
-            >
-              <div className="flex items-center gap-2 mb-4">
-                <BarChart3 className="w-4 h-4 text-accent" />
-                <span className="font-mono text-sm font-bold">
-                  EXTRACTED INTEL
-                </span>
-              </div>
-
-              <div className="space-y-3">
-                {extractedClues.map((clue, index) => (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.5 + index * 0.1 }}
-                    className="flex items-center gap-2 p-2 bg-secondary/30 rounded border border-border/50"
-                  >
-                    <div className="text-primary">{clue.icon}</div>
-                    <span className="font-mono text-xs text-foreground">
-                      {clue.value}
-                    </span>
-                  </motion.div>
-                ))}
-              </div>
-
-              <div className="mt-4 pt-4 border-t border-border">
-                <p className="font-mono text-xs text-muted-foreground">
-                  Clues are automatically extracted from visible text. Use them
-                  to form your hypothesis.
-                </p>
-              </div>
-            </motion.div>
 
             {/* Emote Panel */}
             <EmotePanel

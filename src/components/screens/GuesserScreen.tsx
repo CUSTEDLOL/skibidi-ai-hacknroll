@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
-import { FileText, Sparkles, HelpCircle, Calendar, User, MapPin, Hash } from "lucide-react";
+import { FileText, HelpCircle } from "lucide-react";
 import { Timer } from "../ui/Timer";
 import { TerminalInput } from "../ui/TerminalInput";
 import { SearchResult } from "../ui/SearchResult";
@@ -14,36 +14,22 @@ export interface RedactedResult {
   confidence?: number;
 }
 
-export interface ExtractedClue {
-  type: string;
-  value: string;
-}
-
 interface GuesserScreenProps {
   round: number;
   totalRounds: number;
   guessesRemaining: number;
   redactedResults?: RedactedResult[];
-  extractedClues?: ExtractedClue[];
   onGuess?: (guess: string) => void;
   onRequestHint?: () => void;
   timeLimit?: number;
   lobbyId: string;
 }
 
-const clueIcons: Record<string, typeof Calendar> = {
-  date: Calendar,
-  person: User,
-  location: MapPin,
-  number: Hash,
-};
-
 export function GuesserScreen({
   round,
   totalRounds,
   guessesRemaining,
   redactedResults = [],
-  extractedClues = [],
   onGuess,
   onRequestHint,
   timeLimit = 120,
@@ -188,43 +174,6 @@ export function GuesserScreen({
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Extracted Clues */}
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.4 }}
-              className="bg-card border border-primary/30 rounded-xl p-4"
-            >
-              <div className="flex items-center gap-2 mb-4">
-                <Sparkles className="w-4 h-4 text-primary" />
-                <span className="font-mono text-sm text-primary font-bold">EXTRACTED INTEL</span>
-              </div>
-              {extractedClues.length > 0 ? (
-                <ul className="space-y-3">
-                  {extractedClues.map((clue, i) => {
-                    const IconComponent = clueIcons[clue.type] || Hash;
-                    return (
-                      <motion.li
-                        key={i}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.5 + i * 0.1 }}
-                        className="flex items-center gap-3"
-                      >
-                        <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                          <IconComponent className="w-4 h-4 text-primary" />
-                        </div>
-                        <span className="font-mono text-sm text-foreground">{clue.value}</span>
-                      </motion.li>
-                    );
-                  })}
-                </ul>
-              ) : (
-                <p className="font-mono text-xs text-muted-foreground italic">
-                  No intel extracted yet
-                </p>
-              )}
-            </motion.div>
 
             {/* Request Hint */}
             <motion.div
