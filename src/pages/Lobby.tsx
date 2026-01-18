@@ -29,6 +29,7 @@ import {
 } from "@/lib/api";
 import { socket } from "@/socket";
 import { toast } from "sonner";
+import { useAudio } from "@/contexts/AudioContext";
 
 interface ChatMessage {
   id: string;
@@ -48,6 +49,7 @@ const Lobby = () => {
   const playerId = localStorage.getItem("player_id") || "";
   const lobbyIdRef = useRef<string | null>(null);
   const isGameStartingRef = useRef(false);
+  const { playBackgroundMusic, stopBackgroundMusic } = useAudio();
 
   // Load lobby data and join via WebSocket
   useEffect(() => {
@@ -296,6 +298,16 @@ const Lobby = () => {
       }
     };
   }, [code, playerId, navigate]);
+
+  // Play lobby music on mount
+  useEffect(() => {
+    playBackgroundMusic('lobby');
+    
+    return () => {
+      // Stop music when leaving lobby
+      stopBackgroundMusic();
+    };
+  }, [playBackgroundMusic, stopBackgroundMusic]);
 
   // Check if current player is host
   const isHost = lobby?.players[0]?.playerId === playerId;

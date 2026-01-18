@@ -30,6 +30,7 @@ import {
   type Player,
 } from "@/lib/playerUtils";
 import { socket } from "@/socket";
+import { useAudio } from "@/contexts/AudioContext";
 
 interface RedactedTerm {
   start: number;
@@ -124,6 +125,28 @@ const SearcherActive = () => {
   const initialSearchResults = (location.state as any)?.initialSearchResults;
 
   const searchesRemaining = maxSearches - searchHistory.length;
+
+  const { playBackgroundMusic, stopBackgroundMusic, setMusicIntensity } = useAudio();
+
+  // Play searcher music on mount
+  useEffect(() => {
+    playBackgroundMusic('searcher');
+    
+    return () => {
+      stopBackgroundMusic();
+    };
+  }, [playBackgroundMusic, stopBackgroundMusic]);
+
+  // Update music intensity based on time remaining
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Intensity increases as time runs low
+      const intensity = Math.min(1, (timeLimit - 30) / timeLimit); // Ramp up in last 30 seconds
+      setMusicIntensity(Math.max(0, intensity));
+    }, 5000); // Update every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [timeLimit, setMusicIntensity]);
 
   // Check if lobbyId is missing and redirect
   useEffect(() => {

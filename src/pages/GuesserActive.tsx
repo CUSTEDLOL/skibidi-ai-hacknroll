@@ -30,6 +30,7 @@ import {
 } from "@/lib/playerUtils";
 import { makeGuess, getLobby } from "@/lib/api";
 import { socket } from "@/socket";
+import { useAudio } from "@/contexts/AudioContext";
 
 interface ExtractedClue {
   type: "date" | "person" | "location" | "quote";
@@ -98,6 +99,30 @@ const GuesserActive = () => {
   // const maxAttempts = (location.state as any)?.maxAttempts || 5; // Unlimited attempts
 
   // const attemptsRemaining = maxAttempts - guessHistory.length; // Unlimited
+
+  const { playBackgroundMusic, stopBackgroundMusic, setMusicIntensity } = useAudio();
+
+  // Play guesser music on mount
+  useEffect(() => {
+    if (!isWaitingForSearcher) {
+      playBackgroundMusic('guesser');
+    }
+    
+    return () => {
+      stopBackgroundMusic();
+    };
+  }, [isWaitingForSearcher, playBackgroundMusic, stopBackgroundMusic]);
+
+  // Update music intensity based on time remaining
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Intensity increases as time runs low
+      const intensity = Math.min(1, (timeLimit - 30) / timeLimit);
+      setMusicIntensity(Math.max(0, intensity));
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [timeLimit, setMusicIntensity]);
 
   // Listen for round start and redacted results
   useEffect(() => {
