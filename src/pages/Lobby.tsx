@@ -19,6 +19,7 @@ import { Header } from "@/components/layout/Header";
 import { Background } from "@/components/layout/Background";
 import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
 import { GlowButton } from "@/components/ui/GlowButton";
+import { ChatPanel } from "@/components/ui/ChatPanel";
 import {
   createLobby,
   joinLobby,
@@ -29,24 +30,18 @@ import {
 } from "@/lib/api";
 import { socket } from "@/socket";
 import { toast } from "sonner";
-
-interface ChatMessage {
-  id: string;
-  playerId: string;
-  message: string;
-  timestamp: string;
-}
+import { useAudio } from "@/contexts/AudioContext";
 
 const Lobby = () => {
   const navigate = useNavigate();
   const { code } = useParams<{ code: string }>();
   const [lobby, setLobby] = useState<LobbyInfo | null>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState("");
   const [isStarting, setIsStarting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const playerId = localStorage.getItem("player_id") || "";
   const lobbyIdRef = useRef<string | null>(null);
+  const isGameStartingRef = useRef(false);
+  const { playBackgroundMusic, stopBackgroundMusic } = useAudio();
 
   // Load lobby data and join via WebSocket
   useEffect(() => {
@@ -144,6 +139,20 @@ const Lobby = () => {
         lobbyIdRef.current = lobbyId;
         setLobby(lobbyData.lobby);
 
+        // Store lobbyId in current_lobby_settings for persistence
+        const existingSettings = localStorage.getItem("current_lobby_settings");
+        const parsedSettings = existingSettings
+          ? JSON.parse(existingSettings)
+          : {};
+        localStorage.setItem(
+          "current_lobby_settings",
+          JSON.stringify({
+            ...parsedSettings,
+            lobbyId,
+            lobbyCode: code,
+          }),
+        );
+
         // Connect to WebSocket and join lobby room
         if (socket.connected) {
           socket.emit("lobby:join", {
@@ -224,12 +233,33 @@ const Lobby = () => {
       console.log("Game started event received:", data);
       // Find current player's role
       const myPlayer = data.players.find((p) => p.playerId === playerId);
+
+      // Get lobbyId from current_lobby_settings
+      const settings = localStorage.getItem("current_lobby_settings");
+      const actualLobbyId =
+        lobbyIdRef.current || (settings ? JSON.parse(settings).lobbyId : null);
+
       if (myPlayer?.role) {
+        // Mark as game starting to prevent lobby:leave
+        isGameStartingRef.current = true;
+
         // Navigate based on role
         if (myPlayer.role === "searcher") {
-          navigate("/game/searcher-briefing");
+          navigate("/game/searcher-briefing", {
+            state: {
+              lobbyId: lobbyIdRef.current,
+              lobbyCode: code,
+              gameConfig: data.gameConfig,
+            },
+          });
         } else if (myPlayer.role === "guesser") {
-          navigate("/game/guesser-active");
+          navigate("/game/guesser-active", {
+            state: {
+              lobbyId: lobbyIdRef.current,
+              lobbyCode: code,
+              gameConfig: data.gameConfig,
+            },
+          });
         }
       }
     };
@@ -250,12 +280,26 @@ const Lobby = () => {
       socket.off("error", handleError);
       socket.off("game:started", handleGameStarted);
 
-      // Leave lobby on unmount
-      if (lobbyIdRef.current && socket.connected) {
+      // Leave lobby on unmount ONLY if game is NOT starting
+      if (
+        lobbyIdRef.current &&
+        socket.connected &&
+        !isGameStartingRef.current
+      ) {
         socket.emit("lobby:leave", { lobbyId: lobbyIdRef.current });
       }
     };
   }, [code, playerId, navigate]);
+
+  // Play lobby music on mount
+  useEffect(() => {
+    playBackgroundMusic('lobby');
+    
+    return () => {
+      // Stop music when leaving lobby
+      stopBackgroundMusic();
+    };
+  }, [playBackgroundMusic, stopBackgroundMusic]);
 
   // Check if current player is host
   const isHost = lobby?.players[0]?.playerId === playerId;
@@ -267,20 +311,6 @@ const Lobby = () => {
       navigator.clipboard.writeText(code);
       toast.success("Code copied! Share with friends");
     }
-  };
-
-  const handleSendMessage = () => {
-    if (!chatInput.trim()) return;
-
-    const newMessage: ChatMessage = {
-      id: Date.now().toString(),
-      playerId,
-      message: chatInput.trim(),
-      timestamp: new Date().toISOString(),
-    };
-
-    setChatMessages((prev) => [...prev, newMessage]);
-    setChatInput("");
   };
 
   const handleLeaveLobby = async () => {
@@ -323,13 +353,34 @@ const Lobby = () => {
 
       const result = await startGame(lobbyIdRef.current, gameConfig);
 
+      // Mark as game starting to prevent lobby:leave
+      isGameStartingRef.current = true;
+
       // Navigate to role assignment or game screen
       // The backend assigns roles, so we can navigate based on the player's role
       const myPlayer = result.players.find((p) => p.playerId === playerId);
+
+      // Get lobbyId from current_lobby_settings
+      const settings = localStorage.getItem("current_lobby_settings");
+      const actualLobbyId =
+        lobbyIdRef.current || (settings ? JSON.parse(settings).lobbyId : null);
+
       if (myPlayer?.role === "searcher") {
-        navigate("/game/searcher-briefing");
+        navigate("/game/searcher-briefing", {
+          state: {
+            lobbyId: lobbyIdRef.current,
+            lobbyCode: code,
+            gameConfig: gameConfig,
+          },
+        });
       } else if (myPlayer?.role === "guesser") {
-        navigate("/game/guesser-active");
+        navigate("/game/guesser-active", {
+          state: {
+            lobbyId: lobbyIdRef.current,
+            lobbyCode: code,
+            gameConfig: gameConfig,
+          },
+        });
       } else {
         navigate(`/lobby/${code}/assign-roles`);
       }
@@ -471,7 +522,8 @@ const Lobby = () => {
                           : "text-muted-foreground"
                       }`}
                     >
-                      {player.playerName}
+                      {player.playerName}{" "}
+                      {player.playerId === playerId && "(YOU)"}
                       {!isConnected && isWaiting && (
                         <span className="text-xs ml-2 text-yellow-600">
                           (CONNECTING...)
@@ -575,46 +627,12 @@ const Lobby = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="bg-card border border-border rounded-lg p-4"
           >
-            <div className="flex items-center gap-2 mb-4">
-              <MessageSquare className="w-4 h-4 text-primary" />
-              <h2 className="font-mono font-semibold text-foreground">CHAT</h2>
-            </div>
-
-            <div className="h-32 overflow-y-auto mb-3 space-y-2 scrollbar-thin">
-              {chatMessages.length === 0 ? (
-                <div className="text-center text-muted-foreground font-mono text-sm py-4">
-                  No messages yet...
-                </div>
-              ) : (
-                chatMessages.map((msg) => (
-                  <div key={msg.id} className="font-mono text-sm">
-                    <span className="text-primary">{msg.playerId}:</span>{" "}
-                    <span className="text-foreground">{msg.message}</span>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-                placeholder="Type message..."
-                className="flex-1 px-3 py-2 bg-background border border-border rounded-lg font-mono text-sm
-                  focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground"
-              />
-              <button
-                onClick={handleSendMessage}
-                className="px-4 py-2 bg-primary/20 border border-primary/50 rounded-lg
-                  hover:bg-primary/30 transition-colors"
-              >
-                <Send className="w-4 h-4 text-primary" />
-              </button>
-            </div>
+            <ChatPanel
+              lobbyId={lobbyIdRef.current || ""}
+              playerId={playerId}
+              className="h-[400px]"
+            />
           </motion.div>
 
           {/* Role Assignment Notice */}

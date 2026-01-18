@@ -1,6 +1,14 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect } from "react";
-import { Trophy, Clock, Target, Zap, Star, Share2, RotateCcw } from "lucide-react";
+import {
+  Trophy,
+  Clock,
+  Target,
+  Zap,
+  Star,
+  Share2,
+  RotateCcw,
+} from "lucide-react";
 import { GlowButton } from "../ui/GlowButton";
 
 interface Score {
@@ -17,6 +25,7 @@ interface RoundResultProps {
   timeUsed?: number;
   totalTime?: number;
   guessAttempts?: number;
+  searchAttempts?: number;
   rank?: number;
   onContinue?: () => void;
   onRematch?: () => void;
@@ -29,13 +38,16 @@ export function RoundResult({
   timeUsed,
   totalTime,
   guessAttempts,
+  searchAttempts,
   rank,
   onContinue,
   onRematch,
 }: RoundResultProps) {
   const [showScores, setShowScores] = useState(false);
   const [animatedTotal, setAnimatedTotal] = useState(0);
-  const totalScore = scores ? scores.base + scores.speedBonus + scores.efficiency + scores.firstTry : 0;
+  const totalScore = scores
+    ? scores.base + scores.speedBonus + scores.efficiency + scores.firstTry
+    : 0;
   const hasScores = scores !== undefined;
 
   useEffect(() => {
@@ -48,7 +60,7 @@ export function RoundResult({
       let start = 0;
       const duration = 1500;
       const increment = totalScore / (duration / 16);
-      
+
       const counter = setInterval(() => {
         start += increment;
         if (start >= totalScore) {
@@ -79,13 +91,14 @@ export function RoundResult({
           transition={{ delay: 0.3 }}
           className={`
             inline-block px-8 py-3 rounded-lg font-mono text-xl font-bold uppercase tracking-widest mb-6
-            ${success 
-              ? 'bg-success/20 text-success border-2 border-success shadow-[0_0_30px_hsl(160_100%_40%/0.3)]' 
-              : 'bg-destructive/20 text-destructive border-2 border-destructive shadow-[0_0_30px_hsl(0_85%_55%/0.3)]'
+            ${
+              success
+                ? "bg-success/20 text-success border-2 border-success shadow-[0_0_30px_hsl(160_100%_40%/0.3)]"
+                : "bg-destructive/20 text-destructive border-2 border-destructive shadow-[0_0_30px_hsl(0_85%_55%/0.3)]"
             }
           `}
         >
-          {success ? '🎯 MISSION ACCOMPLISHED' : '❌ MISSION FAILED'}
+          {success ? "🎯 MISSION ACCOMPLISHED" : "❌ MISSION FAILED"}
         </motion.div>
 
         {/* Secret Topic Reveal */}
@@ -95,7 +108,9 @@ export function RoundResult({
           transition={{ delay: 0.8 }}
           className="mb-8"
         >
-          <p className="font-mono text-sm text-muted-foreground mb-2">THE SECRET TOPIC WAS:</p>
+          <p className="font-mono text-sm text-muted-foreground mb-2">
+            THE SECRET TOPIC WAS:
+          </p>
           <motion.h1
             initial={{ scale: 0.5, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -121,10 +136,30 @@ export function RoundResult({
 
             <div className="space-y-3">
               {[
-                { label: "Base Score", value: scores.base, icon: Target, delay: 0 },
-                { label: "Speed Bonus", value: scores.speedBonus, icon: Clock, delay: 0.1 },
-                { label: "Efficiency", value: scores.efficiency, icon: Zap, delay: 0.2 },
-                { label: "First Try Bonus", value: scores.firstTry, icon: Star, delay: 0.3 },
+                {
+                  label: "Base Score",
+                  value: scores.base,
+                  icon: Target,
+                  delay: 0,
+                },
+                {
+                  label: "Speed Bonus",
+                  value: scores.speedBonus,
+                  icon: Clock,
+                  delay: 0.1,
+                },
+                {
+                  label: "Efficiency",
+                  value: scores.efficiency,
+                  icon: Zap,
+                  delay: 0.2,
+                },
+                {
+                  label: "First Try Bonus",
+                  value: scores.firstTry,
+                  icon: Star,
+                  delay: 0.3,
+                },
               ].map((item) => (
                 <motion.div
                   key={item.label}
@@ -135,9 +170,13 @@ export function RoundResult({
                 >
                   <div className="flex items-center gap-2">
                     <item.icon className="w-4 h-4 text-muted-foreground" />
-                    <span className="font-mono text-sm text-foreground">{item.label}</span>
+                    <span className="font-mono text-sm text-foreground">
+                      {item.label}
+                    </span>
                   </div>
-                  <span className={`font-mono font-bold ${item.value > 0 ? 'text-success' : 'text-muted-foreground'}`}>
+                  <span
+                    className={`font-mono font-bold ${item.value > 0 ? "text-success" : "text-muted-foreground"}`}
+                  >
                     +{item.value}
                   </span>
                 </motion.div>
@@ -153,9 +192,7 @@ export function RoundResult({
             >
               <div className="flex items-center justify-between">
                 <span className="font-mono font-bold text-lg">TOTAL</span>
-                <motion.span
-                  className="font-mono font-bold text-3xl text-primary text-glow-cyan"
-                >
+                <motion.span className="font-mono font-bold text-3xl text-primary text-glow-cyan">
                   {animatedTotal}
                 </motion.span>
               </div>
@@ -166,35 +203,60 @@ export function RoundResult({
 
       {/* Performance Stats */}
       <AnimatePresence>
-        {showScores && (timeUsed !== undefined || guessAttempts !== undefined || rank !== undefined) && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.8 }}
-            className="flex gap-8 text-center"
-          >
-            {timeUsed !== undefined && (
-              <div>
-                <p className="font-mono text-xs text-muted-foreground">TIME USED</p>
-                <p className="font-mono text-xl font-bold text-foreground">
-                  {Math.floor(timeUsed / 60)}:{(timeUsed % 60).toString().padStart(2, '0')}
-                </p>
-              </div>
-            )}
-            {guessAttempts !== undefined && (
-              <div>
-                <p className="font-mono text-xs text-muted-foreground">GUESSES</p>
-                <p className="font-mono text-xl font-bold text-foreground">{guessAttempts}</p>
-              </div>
-            )}
-            {rank !== undefined && (
-              <div>
-                <p className="font-mono text-xs text-muted-foreground">RANK TODAY</p>
-                <p className="font-mono text-xl font-bold text-accent">#{rank}</p>
-              </div>
-            )}
-          </motion.div>
-        )}
+        {showScores &&
+          (timeUsed !== undefined ||
+            guessAttempts !== undefined ||
+            searchAttempts !== undefined ||
+            rank !== undefined) && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.8 }}
+              className="flex gap-8 text-center"
+            >
+              {timeUsed !== undefined && (
+                <div>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    TIME USED
+                  </p>
+                  <p className="font-mono text-xl font-bold text-foreground">
+                    {Math.floor(timeUsed / 60)}:
+                    {(timeUsed % 60).toString().padStart(2, "0")}
+                  </p>
+                </div>
+              )}
+              {guessAttempts !== undefined && guessAttempts > 0 && (
+                <div>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    GUESSES
+                  </p>
+                  <p className="font-mono text-xl font-bold text-foreground">
+                    {guessAttempts}
+                  </p>
+                </div>
+              )}
+              {searchAttempts !== undefined && searchAttempts > 0 && (
+                <div>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    SEARCHES
+                  </p>
+                  <p className="font-mono text-xl font-bold text-foreground">
+                    {searchAttempts}
+                  </p>
+                </div>
+              )}
+              {rank !== undefined && (
+                <div>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    RANK TODAY
+                  </p>
+                  <p className="font-mono text-xl font-bold text-accent">
+                    #{rank}
+                  </p>
+                </div>
+              )}
+            </motion.div>
+          )}
       </AnimatePresence>
 
       {/* Action Buttons */}
@@ -206,13 +268,28 @@ export function RoundResult({
             transition={{ delay: 1 }}
             className="flex flex-wrap gap-4 justify-center mt-4"
           >
-            <GlowButton onClick={onContinue} variant="primary" icon={<Trophy className="w-4 h-4" />}>
-              Continue Mission
-            </GlowButton>
-            <GlowButton onClick={onRematch} variant="secondary" icon={<RotateCcw className="w-4 h-4" />}>
-              Rematch
-            </GlowButton>
-            <GlowButton variant="secondary" icon={<Share2 className="w-4 h-4" />}>
+            {onContinue && (
+              <GlowButton
+                onClick={onContinue}
+                variant="primary"
+                icon={<Trophy className="w-4 h-4" />}
+              >
+                Continue Mission
+              </GlowButton>
+            )}
+            {onRematch && (
+              <GlowButton
+                onClick={onRematch}
+                variant="secondary"
+                icon={<RotateCcw className="w-4 h-4" />}
+              >
+                Rematch
+              </GlowButton>
+            )}
+            <GlowButton
+              variant="secondary"
+              icon={<Share2 className="w-4 h-4" />}
+            >
               Share
             </GlowButton>
           </motion.div>

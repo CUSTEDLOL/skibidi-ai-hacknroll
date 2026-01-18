@@ -30,12 +30,22 @@ export function ChatPanel({
 
     socket.on("chat:message", handleMessage);
 
-    // Initial load of messages if available (could be fetched from API/socket)
-    
+    const handleChatHistory = (data: { messages: ChatMessage[] }) => {
+      if (data.messages) {
+        setMessages(data.messages);
+      }
+    };
+
+    socket.on("chat:history", handleChatHistory);
+
+    // Request history on mount (in case we missed lobby:join or are re-mounting)
+    socket.emit("chat:request_history", { lobbyId });
+
     return () => {
       socket.off("chat:message", handleMessage);
+      socket.off("chat:history", handleChatHistory);
     };
-  }, []);
+  }, [lobbyId]);
 
   useEffect(() => {
     // Auto-scroll to bottom
@@ -51,15 +61,18 @@ export function ChatPanel({
     socket.emit("chat:send", {
       lobbyId,
       message: input.trim(),
+      playerId,
     });
 
     setInput("");
   };
 
   return (
-    <div className={`bg-card border border-border rounded-lg flex flex-col ${className}`}>
+    <div
+      className={`bg-card border border-border rounded-lg flex flex-col ${className}`}
+    >
       {/* Header */}
-      <div 
+      <div
         className="p-3 border-b border-border flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors"
         onClick={() => setIsCollapsed(!isCollapsed)}
       >
@@ -99,11 +112,16 @@ export function ChatPanel({
                       }`}
                     >
                       <div className="flex items-baseline gap-2 mb-1">
-                        <span className={`font-mono text-[10px] ${isMe ? "text-primary" : "text-accent"}`}>
+                        <span
+                          className={`font-mono text-[10px] ${isMe ? "text-primary" : "text-accent"}`}
+                        >
                           {msg.playerName || msg.playerId}
                         </span>
                         <span className="font-mono text-[10px] text-muted-foreground/50">
-                          {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(msg.timestamp).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
                         </span>
                       </div>
                       <div
@@ -113,7 +131,7 @@ export function ChatPanel({
                             : "bg-muted text-foreground rounded-tl-none"
                         }`}
                       >
-                       {msg.message}
+                        {msg.message}
                       </div>
                     </div>
                   );
