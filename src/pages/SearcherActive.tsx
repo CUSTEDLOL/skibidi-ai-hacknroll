@@ -89,21 +89,39 @@ const SearcherActive = () => {
   const [players, setPlayers] = useState<Player[]>([]);
 
   useEffect(() => {
-    if (lobbyId) {
-      getLobby(lobbyId).then((data) => {
-        if (data.lobby) {
-          const lobbyPlayers = data.lobby.players.map((p: any) => ({
-            id: p.playerId,
-            username: p.playerName,
-            score: p.score || 0,
-            isHost: data.lobby.players[0].playerId === p.playerId,
-            role: p.role || "guesser",
-            isReady: true,
-          }));
-          setPlayers(lobbyPlayers);
-        }
-      });
-    }
+    const fetchLobby = () => {
+      if (lobbyId) {
+        getLobby(lobbyId).then((data) => {
+          if (data.lobby) {
+            updatePlayers(data.lobby);
+          }
+        });
+      }
+    };
+
+    const updatePlayers = (lobby: any) => {
+      const lobbyPlayers = lobby.players.map((p: any) => ({
+        id: p.playerId,
+        username: p.playerName,
+        score: p.score || 0,
+        isHost: lobby.players[0].playerId === p.playerId,
+        role: p.role || "guesser",
+        isReady: true,
+      }));
+      setPlayers(lobbyPlayers);
+    };
+
+    fetchLobby();
+
+    const handleLobbyState = (data: { lobby: any }) => {
+      updatePlayers(data.lobby);
+    };
+
+    socket.on("lobby:state", handleLobbyState);
+
+    return () => {
+      socket.off("lobby:state", handleLobbyState);
+    };
   }, [lobbyId]);
 
   // Get game state from location state or use defaults
@@ -133,8 +151,13 @@ const SearcherActive = () => {
     }
   }, [lobbyId, navigate]);
 
-  // Listen for round end (sync with guessers)
+  // Listen for round end (sync with guessers) and join lobby room
   useEffect(() => {
+    // Ensure we are joined to the lobby room for broadcasts
+    if (lobbyId && playerId) {
+      socket.emit("lobby:join", { lobbyId, userId: playerId });
+    }
+
     const handleRoundEnded = (data: {
       reason: string;
       roundNumber: number;
@@ -155,7 +178,7 @@ const SearcherActive = () => {
     return () => {
       socket.off("round:ended", handleRoundEnded);
     };
-  }, [lobbyId, navigate]);
+  }, [lobbyId, navigate, playerId]);
 
   // WebSocket event listeners
   useEffect(() => {
@@ -226,30 +249,6 @@ const SearcherActive = () => {
       socket.off("error", handleError);
     };
   }, [searchHistory.length]);
-
-  // Listen for round end (sync with guessers)
-  useEffect(() => {
-    const handleRoundEnded = (data: {
-      reason: string;
-      roundNumber: number;
-      message?: string;
-    }) => {
-      toast.success(data.message || "Round Ended");
-      navigate("/game/round-result", {
-        state: {
-          round: data.roundNumber,
-          lobbyId,
-          reason: data.reason,
-        },
-      });
-    };
-
-    socket.on("round:ended", handleRoundEnded);
-
-    return () => {
-      socket.off("round:ended", handleRoundEnded);
-    };
-  }, [lobbyId, navigate]);
 
   useEffect(() => {
     // If we have initial search results passed from topic selection, perform a "silent" search

@@ -136,7 +136,9 @@ def timer_broadcast_thread(lobby_id):
             round_state['isActive'] = False
             socketio.emit('round:ended', {
                 'reason': 'time_expired',
-                'roundNumber': round_state.get('roundNumber', 1)
+                'roundNumber': round_state.get('roundNumber', 1),
+                'timeUsed': round_state['timeLimit'],
+                'message': 'Time expired'
             }, room=lobby_id)
             print(f"[Timer] Round ended for lobby {lobby_id}")
             break
@@ -345,7 +347,7 @@ def handle_ping(data):
     emit("debug", "Ping event received and pong sent.")
 
 
-@socketio.on("chat:message")
+@socketio.on("chat:send")
 def handle_chat_message(data):
     """Handle chat messages and persist them"""
     lobby_id = data.get("lobbyId")
@@ -357,10 +359,18 @@ def handle_chat_message(data):
 
     lobby = lobbies[lobby_id]
 
+    # Find player name
+    player_name = player_id
+    for p in lobby['players']:
+        if p['playerId'] == player_id:
+            player_name = p['playerName']
+            break
+
     # Create message object
     chat_msg = {
         "id": str(uuid.uuid4()),
         "playerId": player_id,
+        "playerName": player_name,
         "message": message,
         "timestamp": datetime.now().isoformat()
     }
@@ -372,6 +382,18 @@ def handle_chat_message(data):
 
     # Broadcast to lobby
     socketio.emit("chat:message", chat_msg, room=lobby_id)
+
+
+@socketio.on("chat:request_history")
+def handle_chat_history_request(data):
+    """Client requests chat history"""
+    lobby_id = data.get("lobbyId")
+    if not lobby_id or lobby_id not in lobbies:
+        return
+
+    lobby = lobbies[lobby_id]
+    emit("chat:history", {
+         "messages": lobby.get('chatHistory', [])})
 
 
 @socketio.on("emote:send")
@@ -1164,9 +1186,11 @@ def make_guess():
 
         if all_correct:
             round_state['isActive'] = False
+            time_used = int(time.time() - round_state['startTime'])
             socketio.emit('round:ended', {
                 'reason': 'success',
                 'roundNumber': round_state.get('roundNumber', 1),
+                'timeUsed': time_used,
                 'message': 'All agents have identified the target!'
             }, room=lobby_id)
             print(f"[Round] Round ended (success) for lobby {lobby_id}")

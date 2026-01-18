@@ -74,21 +74,39 @@ const GuesserActive = () => {
   const [players, setPlayers] = useState<Player[]>([]);
 
   useEffect(() => {
-    if (lobbyId) {
-      getLobby(lobbyId).then((data) => {
-        if (data.lobby) {
-          const lobbyPlayers = data.lobby.players.map((p: any) => ({
-            id: p.playerId,
-            username: p.playerName,
-            score: p.score || 0,
-            isHost: data.lobby.players[0].playerId === p.playerId,
-            role: p.role || "guesser",
-            isReady: true,
-          }));
-          setPlayers(lobbyPlayers);
-        }
-      });
-    }
+    const fetchLobby = () => {
+      if (lobbyId) {
+        getLobby(lobbyId).then((data) => {
+          if (data.lobby) {
+            updatePlayers(data.lobby);
+          }
+        });
+      }
+    };
+
+    const updatePlayers = (lobby: any) => {
+      const lobbyPlayers = lobby.players.map((p: any) => ({
+        id: p.playerId,
+        username: p.playerName,
+        score: p.score || 0,
+        isHost: lobby.players[0].playerId === p.playerId,
+        role: p.role || "guesser",
+        isReady: true,
+      }));
+      setPlayers(lobbyPlayers);
+    };
+
+    fetchLobby();
+
+    const handleLobbyState = (data: { lobby: any }) => {
+      updatePlayers(data.lobby);
+    };
+
+    socket.on("lobby:state", handleLobbyState);
+
+    return () => {
+      socket.off("lobby:state", handleLobbyState);
+    };
   }, [lobbyId]);
 
   // Get game state from location state or use defaults
@@ -128,6 +146,11 @@ const GuesserActive = () => {
         })),
       );
     };
+
+    // Ensure we are joined to the lobby room for broadcasts
+    if (lobbyId && playerId) {
+      socket.emit("lobby:join", { lobbyId, userId: playerId });
+    }
 
     socket.on("round:started", handleRoundStarted);
     socket.on("round:redacted_results", handleRedactedResults);

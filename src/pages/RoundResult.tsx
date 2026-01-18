@@ -8,6 +8,7 @@ import { PlayerLeaderboard } from "@/components/ui/PlayerLeaderboard";
 import { getLobby } from "@/lib/api";
 import { getOrCreatePlayerId } from "@/lib/playerUtils";
 import { Loader2 } from "lucide-react";
+import { socket } from "@/socket";
 
 const RoundResult = () => {
   const navigate = useNavigate();
@@ -30,27 +31,46 @@ const RoundResult = () => {
   const lobbyId = lobbyInfo?.lobbyId || (location.state as any)?.lobbyId;
 
   useEffect(() => {
-    if (lobbyId) {
-      getLobby(lobbyId).then((data) => {
-        if (data.lobby) {
-          // Transform players for leaderboard (ensure score exists)
-          const players = data.lobby.players.map((p: any) => ({
-            id: p.playerId,
-            username: p.playerName,
-            score: p.score || 0,
-            isHost: data.lobby.players[0].playerId === p.playerId,
-            role: p.role || "guesser",
-            isReady: true,
-          }));
-          setLobbyPlayers(players);
-
-          // Check if current user is host
-          if (data.lobby.players.length > 0) {
-            setIsHost(data.lobby.players[0].playerId === playerId);
+    const fetchLobby = () => {
+      if (lobbyId) {
+        getLobby(lobbyId).then((data) => {
+          if (data.lobby) {
+            updateLobbyState(data.lobby);
           }
-        }
-      });
-    }
+        });
+      }
+    };
+
+    const updateLobbyState = (lobby: any) => {
+      // Transform players for leaderboard (ensure score exists)
+      const players = lobby.players.map((p: any) => ({
+        id: p.playerId,
+        username: p.playerName,
+        score: p.score || 0,
+        guessCount: p.guessCount || 0,
+        isHost: lobby.players[0].playerId === p.playerId,
+        role: p.role || "guesser",
+        isReady: true,
+      }));
+      setLobbyPlayers(players);
+
+      // Check if current user is host
+      if (lobby.players.length > 0) {
+        setIsHost(lobby.players[0].playerId === playerId);
+      }
+    };
+
+    fetchLobby();
+
+    const handleLobbyState = (data: { lobby: any }) => {
+      updateLobbyState(data.lobby);
+    };
+
+    socket.on("lobby:state", handleLobbyState);
+
+    return () => {
+      socket.off("lobby:state", handleLobbyState);
+    };
   }, [lobbyId, playerId]);
 
   // Get game state from location or defaults
@@ -58,6 +78,10 @@ const RoundResult = () => {
   const totalRounds =
     (location.state as any)?.totalRounds || lobbyInfo?.settings?.rounds || 5;
   const success = (location.state as any)?.reason === "success";
+  const timeUsed = (location.state as any)?.timeUsed || 0;
+
+  const currentPlayer = lobbyPlayers.find((p: any) => p.id === playerId);
+  const guessAttempts = currentPlayer?.guessCount || 0;
 
   // Use passed score breakdown if available, else demo
   // Note: Backend emits breakdown to socket, but navigation state might not have it unless passed.
@@ -86,14 +110,6 @@ const RoundResult = () => {
     }
   };
 
-  const handleRematch = () => {
-    if (lobbyCode) {
-      navigate(`/lobby/${lobbyCode}`);
-    } else {
-      navigate("/");
-    }
-  };
-
   return (
     <div className="min-h-screen scanlines overflow-y-auto">
       <Background />
@@ -112,11 +128,10 @@ const RoundResult = () => {
               success={success}
               secretTopic={"CLASSIFIED"} // Hide actual topic unless we want to reveal it. Usually reveal.
               scores={scores}
-              timeUsed={0} // TODO: Pass real time
+              timeUsed={timeUsed}
               totalTime={120}
-              guessAttempts={0}
+              guessAttempts={guessAttempts}
               onContinue={isHost ? handleContinue : undefined}
-              onRematch={handleRematch}
             />
             {!isHost && (
               <div className="mt-4 flex items-center justify-center gap-2 text-muted-foreground font-mono animate-pulse">
