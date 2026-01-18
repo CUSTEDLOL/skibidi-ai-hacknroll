@@ -1,3 +1,15 @@
+from search_utils import (
+    google_search,
+    redact_with_gemini,
+    simple_redaction,
+    validate_query_logic,
+    verify_guess_with_gemini,
+    get_random_topic_data,
+    GOOGLE_API_KEY,
+    GEMINI_API_KEY,
+    GOOGLE_SEARCH_AVAILABLE,
+    GEMINI_AVAILABLE
+)
 import sys
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -11,20 +23,12 @@ from flask_socketio import SocketIO, join_room, leave_room, emit
 from typing import List
 import time
 import threading
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Import shared utility functions
-from search_utils import (
-    google_search,
-    redact_with_gemini,
-    simple_redaction,
-    validate_query_logic,
-    verify_guess_with_gemini,
-    get_random_topic_data,
-    GOOGLE_API_KEY,
-    GEMINI_API_KEY,
-    GOOGLE_SEARCH_AVAILABLE,
-    GEMINI_AVAILABLE
-)
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -854,10 +858,38 @@ def get_lobby_by_code(lobby_code):
 
 # ============ Round Management Endpoints ============
 
+def perform_initial_search_background(lobby_id, user_id, topic, forbidden_words):
+    """Background task to perform initial search and send results"""
+    try:
+        app.logger.info(
+            f"[Background] Starting initial search for lobby {lobby_id}, topic: {topic}")
+
+        # Perform automatic initial search
+        initial_query = topic
+        initial_results = google_search(initial_query)
+
+        app.logger.info(
+            f"[Background] Search completed, found {len(initial_results)} results")
+
+        # Send initial results to searcher
+        searcher_sid = user_socket_map.get(user_id)
+        if searcher_sid:
+            socketio.emit('round:initial_results', {
+                'results': initial_results,
+                'query': initial_query
+            }, room=searcher_sid)
+            app.logger.info(f"[Background] Sent initial results to searcher")
+
+    except Exception as e:
+        app.logger.error(f"[Background] Error in initial search: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 @app.route('/api/round/select-topic', methods=['POST'])
 def select_topic():
     """
-    Searcher selects a topic and starts the round with automatic initial search
+    Searcher selects a topic and starts the round
     Request: {
         "lobbyId": str,
         "userId": str,
@@ -868,8 +900,7 @@ def select_topic():
     }
     Response: {
         "roundState": {...},
-        "initialResults": [...] (for searcher),
-        "redactedResults": [...] (for guessers)
+        "message": str
     }
     """
     data = request.json
@@ -898,14 +929,6 @@ def select_topic():
     if not searcher:
         return jsonify({'error': 'Only the searcher can select a topic'}), 403
 
-    # Perform automatic initial search
-    initial_query = topic  # Search for the topic itself
-    initial_results = google_search(initial_query)
-
-    # Redact results for guessers
-    redacted_results = redact_with_gemini(
-        initial_results, forbidden_words, initial_query, topic)
-
     # Reset player round status
     for p in lobby['players']:
         p['hasGuessedCorrectly'] = False
@@ -913,7 +936,7 @@ def select_topic():
         p['roundScore'] = 0
         p['roundBreakdown'] = None
 
-    # Initialize round state
+    # Initialize round state immediately
     current_time = time.time()
     lobby['roundState'] = {
         'roundNumber': round_number,
@@ -923,9 +946,9 @@ def select_topic():
         'topic': topic,
         'forbiddenWords': forbidden_words,
         'searcherReady': True,
-        'lastResultSentAt': current_time,  # Initial result counts as first send
+        'lastResultSentAt': current_time,
         'resultCooldown': 30,
-        'initialResultSent': True,
+        'initialResultSent': False,  # Will be set to true after background search
         'isActive': True,
         'searchCount': 0
     }
@@ -945,32 +968,65 @@ def select_topic():
         'roundState': lobby['roundState']
     }, room=lobby_id)
 
-    # Send initial results to searcher
-    searcher_sid = user_socket_map.get(user_id)
-    if searcher_sid:
-        socketio.emit('round:initial_results', {
-            'results': initial_results,
-            'query': initial_query
-        }, room=searcher_sid)
-
-    # Send redacted results to guessers
-    for player in lobby['players']:
-        if player['role'] == 'guesser':
-            guesser_sid = user_socket_map.get(player['playerId'])
-            if guesser_sid:
-                socketio.emit('round:redacted_results', {
-                    'results': redacted_results
-                }, room=guesser_sid)
+    # Start background task for initial search (non-blocking)
+    socketio.start_background_task(
+        perform_initial_search_background,
+        lobby_id,
+        user_id,
+        topic,
+        forbidden_words
+    )
 
     print(
         f"[Round] Started round {round_number} for lobby {lobby_id} with topic: {topic}")
 
+    # Return immediately without waiting for search results
     return jsonify({
         'roundState': lobby['roundState'],
-        'initialResults': initial_results,
-        'redactedResults': redacted_results,
-        'message': 'Round started successfully'
+        'message': 'Round started successfully - search in progress'
     }), 200
+
+
+def perform_redaction_and_broadcast_background(lobby_id, user_id, query, results, forbidden_words, topic):
+    """Background task to redact results and broadcast to guessers"""
+    try:
+        app.logger.info(
+            f"[Background] Starting redaction for lobby {lobby_id}, query: {query}")
+
+        # Redact results for guessers
+        redacted_results = redact_with_gemini(
+            results,
+            forbidden_words,
+            query,
+            topic
+        )
+
+        app.logger.info(
+            f"[Background] Redaction completed, broadcasting to guessers")
+
+        # Get lobby to access players
+        if lobby_id not in lobbies:
+            app.logger.error(f"[Background] Lobby {lobby_id} not found")
+            return
+
+        lobby = lobbies[lobby_id]
+
+        # Send redacted results to guessers
+        for player in lobby['players']:
+            if player['role'] == 'guesser':
+                guesser_sid = user_socket_map.get(player['playerId'])
+                if guesser_sid:
+                    socketio.emit('round:new_result', {
+                        'results': redacted_results,
+                        'timestamp': time.time()
+                    }, room=guesser_sid)
+
+        app.logger.info(f"[Background] Results sent to guessers")
+
+    except Exception as e:
+        app.logger.error(f"[Background] Error in redaction: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 @app.route('/api/round/send-result', methods=['POST'])
@@ -1021,41 +1077,35 @@ def send_result():
             'cooldownRemaining': cooldown_remaining
         }), 429
 
-    # Redact results for guessers
-    redacted_results = redact_with_gemini(
-        results,
-        round_state['forbiddenWords'],
-        query,
-        round_state['topic']
-    )
-
-    # Update cooldown timestamp
+    # Update cooldown timestamp immediately
     round_state['lastResultSentAt'] = time.time()
 
-    # Send redacted results to guessers
-    for player in lobby['players']:
-        if player['role'] == 'guesser':
-            guesser_sid = user_socket_map.get(player['playerId'])
-            if guesser_sid:
-                socketio.emit('round:new_result', {
-                    'results': redacted_results,
-                    'timestamp': time.time()
-                }, room=guesser_sid)
-
-    # Notify searcher of successful send and start cooldown
+    # Notify searcher of successful send and start cooldown immediately
     searcher_sid = user_socket_map.get(user_id)
     if searcher_sid:
         socketio.emit('round:result_sent_confirmation', {
             'cooldownDuration': round_state['resultCooldown']
         }, room=searcher_sid)
 
+    # Start background task for redaction and broadcasting (non-blocking)
+    socketio.start_background_task(
+        perform_redaction_and_broadcast_background,
+        lobby_id,
+        user_id,
+        query,
+        results,
+        round_state['forbiddenWords'],
+        round_state['topic']
+    )
+
     print(
         f"[Round] Searcher sent result to guessers in lobby {lobby_id}, cooldown started")
 
+    # Return immediately without waiting for redaction
     return jsonify({
         'success': True,
         'cooldownRemaining': round_state['resultCooldown'],
-        'message': 'Result sent to guessers'
+        'message': 'Result sent to guessers - redaction in progress'
     }), 200
 
 
@@ -1359,4 +1409,4 @@ def health_check():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV') == 'development'
-    socketio.run(app, debug=debug, host='0.0.0.0', port=port)
+    socketio.run(app, debug=True, host='0.0.0.0', port=port)

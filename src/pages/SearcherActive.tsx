@@ -21,6 +21,7 @@ import {
   validateQuery,
   getRandomTopic,
   getLobby,
+  sendResult,
   type SearchResponse,
 } from "@/lib/api";
 import { toast } from "sonner";
@@ -291,7 +292,7 @@ const SearcherActive = () => {
     });
   };
 
-  const handleSubmitToGuesser = () => {
+  const handleSubmitToGuesser = async () => {
     if (selectedQueryIndex === null) {
       if (searchHistory.length === 0) {
         toast.error("Make a search first!");
@@ -306,25 +307,36 @@ const SearcherActive = () => {
         ? selectedQueryIndex
         : searchHistory.length - 1;
 
-    // Use WebSocket to select and send query to guessers
-    socket.emit("searcher_select_query", {
-      room_key: lobbyId,
-      query_index: indexToSend,
-    });
+    const selectedHistory = searchHistory[indexToSend];
 
-    toast.info("Sending to guessers...");
+    try {
+      toast.info("Sending to guessers...");
+
+      // Use the optimized sendResult API endpoint
+      const response = await sendResult({
+        lobbyId: lobbyId!,
+        userId: playerId,
+        query: selectedHistory.query,
+        results: selectedHistory.results,
+      });
+
+      toast.success(response.message || "Results sent to guessers!");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to send results");
+    }
   };
 
   const handleSelectQuery = (index: number) => {
-    setSelectedQueryIndex(index);
-    setCurrentResults(searchHistory[index].results);
-    setShowResults(true);
-
-    // Auto-send when clicked
-    socket.emit("searcher_select_query", {
-      room_key: lobbyId,
-      query_index: index,
-    });
+    try {
+      // Only select visually, don't auto-send
+      setSelectedQueryIndex(index);
+      setCurrentResults(searchHistory[index].results);
+      setShowResults(true);
+      toast.info(`Selected: "${searchHistory[index].query}"`);
+    } catch (error) {
+      console.error("Error selecting query:", error);
+      toast.error("Failed to select result");
+    }
   };
 
   const handleTimeUp = () => {

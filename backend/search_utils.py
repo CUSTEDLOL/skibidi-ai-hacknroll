@@ -9,6 +9,10 @@ import random
 import logging
 from flask import Flask
 from functools import lru_cache
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging - when imported, this will use the parent's logging config
 
@@ -36,18 +40,99 @@ except ImportError:
     gemini_client = None
 
 
+# Dynamically discover the best available Gemini model
+GEMINI_MODEL = None
+
+
+def get_best_gemini_model():
+    """Dynamically discover and return the best available Gemini model."""
+    global GEMINI_MODEL
+
+    if GEMINI_MODEL:
+        return GEMINI_MODEL
+
+    if not GEMINI_AVAILABLE or not gemini_client:
+        logging.warning("[Gemini] Gemini client not available")
+        return None
+
+    try:
+        logging.info("[Gemini] Discovering available models...")
+        models = gemini_client.models.list()
+
+        # Prefer models in this order: flash variants, then pro variants
+        preferred_keywords = ['flash', 'pro']
+        available_models = []
+
+        for model in models:
+            model_name = model.name.replace('models/', '')
+            # Check if model supports generateContent
+            if 'generateContent' in model.supported_actions:
+                available_models.append(model_name)
+                logging.debug(f"[Gemini] Found model: {model_name}")
+
+        # Select best model based on preference
+        for keyword in preferred_keywords:
+            for model_name in available_models:
+                if keyword in model_name.lower():
+                    GEMINI_MODEL = model_name
+                    logging.info(f"[Gemini] Selected model: {GEMINI_MODEL}")
+                    return GEMINI_MODEL
+
+        # If no preferred model, use the first available
+        if available_models:
+            GEMINI_MODEL = available_models[0]
+            logging.info(f"[Gemini] Selected model: {GEMINI_MODEL}")
+            return GEMINI_MODEL
+
+        logging.warning("[Gemini] No suitable models found")
+        return None
+
+    except Exception as e:
+        logging.error(f"[Gemini] Error discovering models: {e}")
+        return None
+
+
+# Initialize model selection on module load
+if GEMINI_AVAILABLE:
+    get_best_gemini_model()
+
+
 @lru_cache(maxsize=50)
 def google_search(search_term, num_results=5):
     """Perform Google search with local caching for speed."""
+    logging.debug(f"[Search Debug] Starting search for: {search_term}")
+    logging.debug(
+        f"[Search Debug] Credentials check - Available: {GOOGLE_SEARCH_AVAILABLE}, Key: {bool(GOOGLE_API_KEY)}, CX: {bool(GOOGLE_CSE_ID)}")
+
+    if GOOGLE_API_KEY:
+        logging.debug(
+            f"[Search Debug] API Key (first 10 chars): {GOOGLE_API_KEY[:10]}...")
+    if GOOGLE_CSE_ID:
+        logging.debug(
+            f"[Search Debug] CSE ID (first 10 chars): {GOOGLE_CSE_ID[:10]}...")
+
     if not (GOOGLE_SEARCH_AVAILABLE and GOOGLE_API_KEY and GOOGLE_CSE_ID):
+        logging.warning(
+            "[Search Debug] Search unavailable due to missing credentials or library")
         return []
 
     try:
         service = build("customsearch", "v1", developerKey=GOOGLE_API_KEY)
-        result = service.cse().list(q=search_term, cx=GOOGLE_CSE_ID, num=num_results).execute()
+        logging.debug("[Search Debug] Service built, executing query...")
+        # Pass key parameter explicitly to ensure API authentication
+        result = service.cse().list(
+            q=search_term,
+            cx=GOOGLE_CSE_ID,
+            num=num_results,
+            key=GOOGLE_API_KEY
+        ).execute()
+
+        logging.debug(f"[Search Debug] API Result keys: {result.keys()}")
+        items = result.get('items', [])
+        logging.debug(f"[Search Debug] Items found: {len(items)}")
 
         search_results = []
-        for item in result.get('items', []):
+        for item in items:
             search_results.append({
                 'title': item.get('title', ''),
                 'snippet': item.get('snippet', ''),
@@ -56,7 +141,7 @@ def google_search(search_term, num_results=5):
             })
         return search_results
     except Exception as e:
-        app.logger.error(f"Search error: {e}")
+        logging.error(f"[Search Debug] Search error: {e}", exc_info=True)
         return []
 
 
@@ -81,12 +166,18 @@ def redact_with_gemini(search_results, forbidden_words, search_query, secret_top
     Return ONLY JSON: [{{ "id": 0, "t": "...", "s": "..." }}]
     """
 
+    # Get the dynamically selected model
+    model_name = get_best_gemini_model()
+    if not model_name:
+        logging.warning(
+            "[Gemini] No model available, falling back to simple redaction")
+        return local_redacted
+
     try:
         response = gemini_client.models.generate_content(
-            model='gemini-1.5-flash',
-            content=prompt,
-            # Fixed here too
-            config={{'response_mime_type': 'application/json'}}
+            model=model_name,
+            contents=prompt,
+            config={'response_mime_type': 'application/json'}
         )
 
         # Some versions of the SDK return response.text, others response.candidates[0].content.parts[0].text
@@ -197,10 +288,22 @@ def verify_guess_with_gemini(guess, topic):
     Return JSON: {{ "is_correct": boolean, "similarity_score": float (0.0-1.0), "reason": "brief explanation" }}
     """
 
+    # Get the dynamically selected model
+    model_name = get_best_gemini_model()
+    if not model_name:
+        logging.warning(
+            "[Gemini] No model available, falling back to simple matching")
+        is_correct = guess.lower() == topic.lower() or topic.lower() in guess.lower()
+        return {
+            "is_correct": is_correct,
+            "similarity_score": 1.0 if is_correct else 0.0,
+            "reason": "Exact match (no Gemini model available)"
+        }
+
     try:
         response = gemini_client.models.generate_content(
-            model='gemini-1.5-flash',
-            content=prompt,
+            model=model_name,
+            contents=prompt,
             config={'response_mime_type': 'application/json'}
         )
 

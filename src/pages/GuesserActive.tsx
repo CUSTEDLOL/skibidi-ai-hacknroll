@@ -135,15 +135,18 @@ const GuesserActive = () => {
       toast.success("Mission Briefing Received! Round Starting...");
     };
 
-    const handleRedactedResults = (data: { results: any[] }) => {
+    const handleNewResult = (data: { results: any[]; timestamp?: number }) => {
+      console.log("[Guesser] Received new results from searcher:", data);
       setRedactedResults(
         data.results.map((r) => ({
-          source: new URL(r.link).hostname,
-          title: r.title,
-          snippet: r.snippet,
+          source:
+            r.displayLink || (r.link ? new URL(r.link).hostname : "Unknown"),
+          title: r.title || "",
+          snippet: r.snippet || "",
           link: r.link,
         })),
       );
+      toast.success("New intelligence received from Searcher!");
     };
 
     const handleRoundEnded = (data: {
@@ -186,13 +189,13 @@ const GuesserActive = () => {
     }
 
     socket.on("round:started", handleRoundStarted);
-    socket.on("round:redacted_results", handleRedactedResults);
+    socket.on("round:new_result", handleNewResult);
     socket.on("round:ended", handleRoundEnded);
     socket.on("round:guess_result", handleGuessResult);
 
     return () => {
       socket.off("round:started", handleRoundStarted);
-      socket.off("round:redacted_results", handleRedactedResults);
+      socket.off("round:new_result", handleNewResult);
       socket.off("round:ended", handleRoundEnded);
       socket.off("round:guess_result", handleGuessResult);
     };
