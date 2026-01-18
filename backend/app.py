@@ -470,6 +470,10 @@ def handle_searcher_make_search(data):
         results = google_search(search_query, num_results=5)
         app.logger.debug(f"Google search returned: {len(results)} results")
 
+        # Increment search count
+        if round_state:
+            round_state['searchCount'] = round_state.get('searchCount', 0) + 1
+
         if not results:
             app.logger.debug(f"WARNING: No results from Google search")
             emit('search_result', {
@@ -906,6 +910,8 @@ def select_topic():
     for p in lobby['players']:
         p['hasGuessedCorrectly'] = False
         p['guessCount'] = 0
+        p['roundScore'] = 0
+        p['roundBreakdown'] = None
 
     # Initialize round state
     current_time = time.time()
@@ -920,7 +926,8 @@ def select_topic():
         'lastResultSentAt': current_time,  # Initial result counts as first send
         'resultCooldown': 30,
         'initialResultSent': True,
-        'isActive': True
+        'isActive': True,
+        'searchCount': 0
     }
 
     # Start timer broadcast thread
@@ -1088,6 +1095,51 @@ def get_round_state(lobby_id):
     }), 200
 
 
+@app.route('/api/round/results/<lobby_id>', methods=['GET'])
+def get_round_results(lobby_id):
+    """
+    Get comprehensive results for the current/last round
+    """
+    if lobby_id not in lobbies:
+        return jsonify({'error': 'Lobby not found'}), 404
+
+    lobby = lobbies[lobby_id]
+    round_state = lobby.get('roundState')
+
+    # Calculate time used
+    time_used = 0
+    if round_state:
+        # If active, calculate elapsed. If not active, it should have stored 'timeUsed' or we calculate from end time?
+        # Actually, let's just calculate from startTime
+        # If ended, we might want to freeze it.
+        # For now, let's just use current time - start time
+        time_used = int(
+            time.time() - round_state.get('startTime', time.time()))
+        # Cap at timeLimit
+        time_used = min(time_used, round_state.get('timeLimit', 120))
+
+    results = []
+    for p in lobby['players']:
+        result = {
+            'playerId': p['playerId'],
+            'playerName': p['playerName'],
+            'role': p['role'],
+            'score': p['score'],
+            'roundScore': p.get('roundScore', 0),
+            'roundBreakdown': p.get('roundBreakdown'),
+            'guessCount': p.get('guessCount', 0),
+            'searchCount': round_state.get('searchCount', 0) if p['role'] == 'searcher' else 0,
+            # Everyone gets the same round time for now, unless we track individual finish times
+            'timeUsed': time_used
+        }
+        results.append(result)
+
+    return jsonify({
+        'results': results,
+        'roundNumber': round_state.get('roundNumber', 1) if round_state else 0
+    }), 200
+
+
 @app.route('/api/round/guess', methods=['POST'])
 def make_guess():
     """
@@ -1151,7 +1203,16 @@ def make_guess():
 
         round_score = base_score + speed_bonus - \
             efficiency_penalty + first_try_bonus + similarity_bonus
+
         player['score'] += round_score
+        player['roundScore'] = round_score
+        player['roundBreakdown'] = {
+            'base': base_score,
+            'speed': speed_bonus,
+            'efficiency': -efficiency_penalty,
+            'firstTry': first_try_bonus,
+            'similarity': similarity_bonus
+        }
 
         # Award points to searcher for speed (collaboration bonus)
         searcher = next(
@@ -1159,7 +1220,14 @@ def make_guess():
         if searcher:
             searcher_bonus = max(0, int(time_remaining / 2))
             searcher['score'] += searcher_bonus
-            # Notify searcher? Maybe via general score update
+
+            # Update searcher round stats
+            if not searcher.get('roundBreakdown'):
+                searcher['roundBreakdown'] = {'collaboration': 0}
+            searcher['roundBreakdown']['collaboration'] = searcher['roundBreakdown'].get(
+                'collaboration', 0) + searcher_bonus
+            searcher['roundScore'] = searcher.get(
+                'roundScore', 0) + searcher_bonus
 
         # Emit success event to this player
         player_sid = user_socket_map.get(user_id)
@@ -1168,12 +1236,7 @@ def make_guess():
                 'correct': True,
                 'score': round_score,
                 'totalScore': player['score'],
-                'breakdown': {
-                    'base': base_score,
-                    'speed': speed_bonus,
-                    'efficiency': -efficiency_penalty,
-                    'firstTry': first_try_bonus
-                }
+                'breakdown': player['roundBreakdown']
             }, room=player_sid)
 
         # Broadcast score update to everyone

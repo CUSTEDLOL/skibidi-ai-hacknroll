@@ -25,6 +25,7 @@ interface RoundResultProps {
   timeUsed?: number;
   totalTime?: number;
   guessAttempts?: number;
+  searchAttempts?: number;
   rank?: number;
   onContinue?: () => void;
   onRematch?: () => void;
@@ -37,6 +38,7 @@ export function RoundResult({
   timeUsed,
   totalTime,
   guessAttempts,
+  searchAttempts,
   rank,
   onContinue,
   onRematch,
@@ -204,6 +206,7 @@ export function RoundResult({
         {showScores &&
           (timeUsed !== undefined ||
             guessAttempts !== undefined ||
+            searchAttempts !== undefined ||
             rank !== undefined) && (
             <motion.div
               initial={{ opacity: 0 }}
@@ -222,13 +225,23 @@ export function RoundResult({
                   </p>
                 </div>
               )}
-              {guessAttempts !== undefined && (
+              {guessAttempts !== undefined && guessAttempts > 0 && (
                 <div>
                   <p className="font-mono text-xs text-muted-foreground">
                     GUESSES
                   </p>
                   <p className="font-mono text-xl font-bold text-foreground">
                     {guessAttempts}
+                  </p>
+                </div>
+              )}
+              {searchAttempts !== undefined && searchAttempts > 0 && (
+                <div>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    SEARCHES
+                  </p>
+                  <p className="font-mono text-xl font-bold text-foreground">
+                    {searchAttempts}
                   </p>
                 </div>
               )}
