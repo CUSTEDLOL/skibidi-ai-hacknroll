@@ -52,6 +52,8 @@ const GuesserActive = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [redactedResults, setRedactedResults] = useState<RedactedResult[]>([]);
   const [isWaitingForSearcher, setIsWaitingForSearcher] = useState(true);
+  const [hasGuessedCorrectly, setHasGuessedCorrectly] = useState(false);
+  const [waitingForOthers, setWaitingForOthers] = useState(false);
 
   // Game state
   const playerId = getOrCreatePlayerId();
@@ -75,30 +77,45 @@ const GuesserActive = () => {
   const [players, setPlayers] = useState<Player[]>([]);
 
   useEffect(() => {
-    if (lobbyId) {
-      getLobby(lobbyId).then((data) => {
-        if (data.lobby) {
-          const lobbyPlayers = data.lobby.players.map((p: any) => ({
-            id: p.playerId,
-            username: p.playerName,
-            score: p.score || 0,
-            isHost: data.lobby.players[0].playerId === p.playerId,
-            role: p.role || "guesser",
-            isReady: true,
-          }));
-          setPlayers(lobbyPlayers);
-        }
-      });
-    }
+    const fetchLobby = () => {
+      if (lobbyId) {
+        getLobby(lobbyId).then((data) => {
+          if (data.lobby) {
+            updatePlayers(data.lobby);
+          }
+        });
+      }
+    };
+
+    const updatePlayers = (lobby: any) => {
+      const lobbyPlayers = lobby.players.map((p: any) => ({
+        id: p.playerId,
+        username: p.playerName,
+        score: p.score || 0,
+        isHost: lobby.players[0].playerId === p.playerId,
+        role: p.role || "guesser",
+        isReady: true,
+      }));
+      setPlayers(lobbyPlayers);
+    };
+
+    fetchLobby();
+
+    const handleLobbyState = (data: { lobby: any }) => {
+      updatePlayers(data.lobby);
+    };
+
+    socket.on("lobby:state", handleLobbyState);
+
+    return () => {
+      socket.off("lobby:state", handleLobbyState);
+    };
   }, [lobbyId]);
 
   // Get game state from location state or use defaults
   const round = (location.state as any)?.round || 1;
   const totalRounds = (location.state as any)?.totalRounds || 5;
   const timeLimit = (location.state as any)?.timeLimit || 120;
-  // const maxAttempts = (location.state as any)?.maxAttempts || 5; // Unlimited attempts
-
-  // const attemptsRemaining = maxAttempts - guessHistory.length; // Unlimited
 
   const { playBackgroundMusic, stopBackgroundMusic, setMusicIntensity } = useAudio();
 
@@ -154,14 +171,57 @@ const GuesserActive = () => {
       );
     };
 
+    const handleRoundEnded = (data: {
+      reason: string;
+      roundNumber: number;
+      message?: string;
+      timeUsed?: number;
+    }) => {
+      toast.success(data.message || "Round Ended");
+      navigate("/game/round-result", {
+        state: {
+          round: data.roundNumber,
+          lobbyId,
+          reason: data.reason,
+          timeUsed: data.timeUsed,
+        },
+      });
+    };
+
+    const handleGuessResult = (data: {
+      correct: boolean;
+      score?: number;
+      totalScore?: number;
+      breakdown?: any;
+      message?: string;
+    }) => {
+      setIsSubmitting(false);
+      if (data.correct) {
+        setHasGuessedCorrectly(true);
+        setWaitingForOthers(true);
+        toast.success("Hypothesis Confirmed! Waiting for team...");
+      } else {
+        toast.error(data.message || "Incorrect hypothesis");
+      }
+    };
+
+    // Ensure we are joined to the lobby room for broadcasts
+    if (lobbyId && playerId) {
+      socket.emit("lobby:join", { lobbyId, userId: playerId });
+    }
+
     socket.on("round:started", handleRoundStarted);
     socket.on("round:redacted_results", handleRedactedResults);
+    socket.on("round:ended", handleRoundEnded);
+    socket.on("round:guess_result", handleGuessResult);
 
     return () => {
       socket.off("round:started", handleRoundStarted);
       socket.off("round:redacted_results", handleRedactedResults);
+      socket.off("round:ended", handleRoundEnded);
+      socket.off("round:guess_result", handleGuessResult);
     };
-  }, [lobbyId]);
+  }, [lobbyId, navigate, playerId]);
 
   // Redirect if no lobbyId found
   useEffect(() => {
@@ -239,20 +299,18 @@ const GuesserActive = () => {
     setIsSubmitting(true);
 
     try {
-      // In a real app, this would submit to backend API
-      // For now, simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (!lobbyId) return;
 
-      // Check if guess is correct (this would come from backend)
-      // For demo, we'll navigate to results
-      navigate("/game/round-result", {
-        state: {
-          guess,
-          guessHistory,
-          round,
-          correct: false, // Would come from backend
-        },
+      const result = await makeGuess({
+        lobbyId,
+        userId: playerId,
+        guess,
       });
+
+      if (!result.correct) {
+        setIsSubmitting(false);
+        toast.error("Incorrect hypothesis");
+      }
     } catch (error: any) {
       console.error("Failed to submit guess:", error);
       toast.error(error.message || "Failed to submit guess");
@@ -266,13 +324,7 @@ const GuesserActive = () => {
   };
 
   const handleTimeUp = () => {
-    navigate("/game/round-result", {
-      state: {
-        guessHistory,
-        round,
-        timeUp: true,
-      },
-    });
+    // Backend timer will trigger round:ended
   };
 
   if (isWaitingForSearcher) {
@@ -397,22 +449,42 @@ const GuesserActive = () => {
               transition={{ delay: 0.5 }}
               className="space-y-4"
             >
-              <TerminalInput
-                onSubmit={handleGuess}
-                placeholder="Enter your hypothesis..."
-                disabled={isSubmitting}
-                type="guess"
-              />
+              {hasGuessedCorrectly ? (
+                <div className="p-6 bg-green-500/10 border border-green-500/50 rounded-lg text-center animate-pulse">
+                  <div className="flex justify-center mb-4">
+                    <CheckCircle className="w-12 h-12 text-green-500" />
+                  </div>
+                  <h3 className="text-xl font-bold text-green-500 font-mono mb-2">
+                    HYPOTHESIS CONFIRMED
+                  </h3>
+                  <p className="text-sm text-green-400 font-mono mb-4">
+                    Target identified correctly. Secure comms established.
+                  </p>
+                  <div className="flex items-center justify-center gap-2 text-muted-foreground font-mono text-xs">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Waiting for team extraction...
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <TerminalInput
+                    onSubmit={handleGuess}
+                    placeholder="Enter your hypothesis..."
+                    disabled={isSubmitting || waitingForOthers}
+                    type="guess"
+                  />
 
-              <GlowButton
-                onClick={handleRequestHint}
-                variant="secondary"
-                size="md"
-                icon={<HelpCircle className="w-4 h-4" />}
-                className="w-full"
-              >
-                Request Hint (-25 points)
-              </GlowButton>
+                  <GlowButton
+                    onClick={handleRequestHint}
+                    variant="secondary"
+                    size="md"
+                    icon={<HelpCircle className="w-4 h-4" />}
+                    className="w-full"
+                  >
+                    Request Hint (-25 points)
+                  </GlowButton>
+                </>
+              )}
             </motion.div>
 
             {/* Guess History */}

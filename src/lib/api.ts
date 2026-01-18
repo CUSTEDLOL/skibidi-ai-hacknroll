@@ -354,6 +354,21 @@ export interface RoundStateResponse {
   cooldownRemaining: number;
 }
 
+export interface RoundResultsResponse {
+  results: Array<{
+    playerId: string;
+    playerName: string;
+    role: string;
+    score: number;
+    roundScore: number;
+    roundBreakdown: any;
+    guessCount: number;
+    searchCount: number;
+    timeUsed: number;
+  }>;
+  roundNumber: number;
+}
+
 export interface MakeGuessRequest {
   lobbyId: string;
   userId: string;
@@ -412,6 +427,22 @@ export async function getRoundState(
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error?.error || "Failed to get round state");
+  }
+
+  return response.json();
+}
+
+export async function getRoundResults(
+  lobbyId: string,
+): Promise<RoundResultsResponse> {
+  const response = await fetch(`${API_BASE}/api/round/results/${lobbyId}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error?.error || "Failed to get round results");
   }
 
   return response.json();

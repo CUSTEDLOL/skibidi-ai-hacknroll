@@ -19,6 +19,7 @@ import { Header } from "@/components/layout/Header";
 import { Background } from "@/components/layout/Background";
 import { ClassifiedStamp } from "@/components/ui/ClassifiedStamp";
 import { GlowButton } from "@/components/ui/GlowButton";
+import { ChatPanel } from "@/components/ui/ChatPanel";
 import {
   createLobby,
   joinLobby,
@@ -31,19 +32,10 @@ import { socket } from "@/socket";
 import { toast } from "sonner";
 import { useAudio } from "@/contexts/AudioContext";
 
-interface ChatMessage {
-  id: string;
-  playerId: string;
-  message: string;
-  timestamp: string;
-}
-
 const Lobby = () => {
   const navigate = useNavigate();
   const { code } = useParams<{ code: string }>();
   const [lobby, setLobby] = useState<LobbyInfo | null>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState("");
   const [isStarting, setIsStarting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const playerId = localStorage.getItem("player_id") || "";
@@ -321,20 +313,6 @@ const Lobby = () => {
     }
   };
 
-  const handleSendMessage = () => {
-    if (!chatInput.trim()) return;
-
-    const newMessage: ChatMessage = {
-      id: Date.now().toString(),
-      playerId,
-      message: chatInput.trim(),
-      timestamp: new Date().toISOString(),
-    };
-
-    setChatMessages((prev) => [...prev, newMessage]);
-    setChatInput("");
-  };
-
   const handleLeaveLobby = async () => {
     if (lobbyIdRef.current && socket.connected) {
       socket.emit("lobby:leave", { lobbyId: lobbyIdRef.current });
@@ -544,7 +522,8 @@ const Lobby = () => {
                           : "text-muted-foreground"
                       }`}
                     >
-                      {player.playerName}
+                      {player.playerName}{" "}
+                      {player.playerId === playerId && "(YOU)"}
                       {!isConnected && isWaiting && (
                         <span className="text-xs ml-2 text-yellow-600">
                           (CONNECTING...)
@@ -648,46 +627,12 @@ const Lobby = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="bg-card border border-border rounded-lg p-4"
           >
-            <div className="flex items-center gap-2 mb-4">
-              <MessageSquare className="w-4 h-4 text-primary" />
-              <h2 className="font-mono font-semibold text-foreground">CHAT</h2>
-            </div>
-
-            <div className="h-32 overflow-y-auto mb-3 space-y-2 scrollbar-thin">
-              {chatMessages.length === 0 ? (
-                <div className="text-center text-muted-foreground font-mono text-sm py-4">
-                  No messages yet...
-                </div>
-              ) : (
-                chatMessages.map((msg) => (
-                  <div key={msg.id} className="font-mono text-sm">
-                    <span className="text-primary">{msg.playerId}:</span>{" "}
-                    <span className="text-foreground">{msg.message}</span>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-                placeholder="Type message..."
-                className="flex-1 px-3 py-2 bg-background border border-border rounded-lg font-mono text-sm
-                  focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground"
-              />
-              <button
-                onClick={handleSendMessage}
-                className="px-4 py-2 bg-primary/20 border border-primary/50 rounded-lg
-                  hover:bg-primary/30 transition-colors"
-              >
-                <Send className="w-4 h-4 text-primary" />
-              </button>
-            </div>
+            <ChatPanel
+              lobbyId={lobbyIdRef.current || ""}
+              playerId={playerId}
+              className="h-[400px]"
+            />
           </motion.div>
 
           {/* Role Assignment Notice */}

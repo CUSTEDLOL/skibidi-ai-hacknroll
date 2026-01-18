@@ -32,13 +32,13 @@ export function useAudio() {
   return useContext(AudioContextReact);
 }
 
-// Music file paths - add more files for different themes if needed
+// Music file paths - lobby vs in-game music
 const MUSIC_FILES: Record<MusicTheme, string> = {
-  lobby: '/lobby-music.wav',
-  searcher: '/lobby-music.wav',
-  guesser: '/lobby-music.wav',
-  victory: '/lobby-music.wav',
-  defeat: '/lobby-music.wav',
+  lobby: '/lobby-music.wav',       // Neon Grid Runner - for lobby
+  searcher: '/game-music.wav',     // Lost in a Moment - during gameplay
+  guesser: '/game-music.wav',      // Lost in a Moment - during gameplay
+  victory: '/lobby-music.wav',     // Back to Neon Grid Runner for results
+  defeat: '/lobby-music.wav',      // Back to Neon Grid Runner for results
 };
 
 // Simple sound effect using Web Audio API
