@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Gamepad2, Home, KeyRound, HelpCircle, Calendar, Trophy, Sparkles, X, Loader2, User } from "lucide-react";
+import { Gamepad2, Home, KeyRound, HelpCircle, Sparkles, X, Loader2, User } from "lucide-react";
 import { GlowButton } from "../ui/GlowButton";
 import { AnimatedGlitchText } from "../ui/GlitchText";
 import { ClassifiedStamp } from "../ui/ClassifiedStamp";
@@ -11,8 +11,6 @@ interface HomeScreenProps {
   onCreateRoom?: (playerName: string) => void;
   onJoinWithCode?: (code: string, playerName: string) => void;
   onHowToPlay?: () => void;
-  onDailyChallenge?: () => void;
-  onLeaderboard?: () => void;
   isSearching?: boolean;
 }
 
@@ -21,8 +19,6 @@ export function HomeScreen({
   onCreateRoom,
   onJoinWithCode,
   onHowToPlay,
-  onDailyChallenge,
-  onLeaderboard,
   isSearching = false,
 }: HomeScreenProps) {
   const [showCodeModal, setShowCodeModal] = useState(false);
@@ -173,7 +169,7 @@ export function HomeScreen({
         </div>
 
         {/* Secondary Actions */}
-        <div className="grid grid-cols-3 gap-3 mt-2">
+        <div className="flex justify-center mt-2">
           <motion.button
             onClick={onHowToPlay}
             initial={{ opacity: 0, y: 20 }}
@@ -181,47 +177,12 @@ export function HomeScreen({
             transition={{ delay: 0.5 }}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="flex flex-col items-center gap-2 p-3 bg-card/50 border border-border/50 rounded-lg
+            className="flex flex-col items-center gap-2 p-3 px-8 bg-card/50 border border-border/50 rounded-lg
               hover:border-primary/30 transition-all group"
           >
             <HelpCircle className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
             <span className="font-mono text-xs text-muted-foreground group-hover:text-foreground transition-colors">
               How to Play
-            </span>
-          </motion.button>
-
-          <motion.button
-            onClick={onDailyChallenge}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="relative flex flex-col items-center gap-2 p-3 bg-card/50 border border-accent/30 rounded-lg
-              hover:border-accent/60 transition-all group overflow-hidden"
-          >
-            <div className="absolute -top-1 -right-1 px-1.5 py-0.5 bg-accent text-accent-foreground font-mono text-[8px] font-bold rounded-bl-lg">
-              NEW
-            </div>
-            <Calendar className="w-5 h-5 text-accent" />
-            <span className="font-mono text-xs text-muted-foreground group-hover:text-foreground transition-colors">
-              Daily Challenge
-            </span>
-          </motion.button>
-
-          <motion.button
-            onClick={onLeaderboard}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.7 }}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="flex flex-col items-center gap-2 p-3 bg-card/50 border border-border/50 rounded-lg
-              hover:border-primary/30 transition-all group"
-          >
-            <Trophy className="w-5 h-5 text-accent" />
-            <span className="font-mono text-xs text-muted-foreground group-hover:text-foreground transition-colors">
-              Leaderboard
             </span>
           </motion.button>
         </div>

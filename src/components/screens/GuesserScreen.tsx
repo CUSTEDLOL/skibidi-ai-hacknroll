@@ -28,6 +28,7 @@ interface GuesserScreenProps {
   onGuess?: (guess: string) => void;
   onRequestHint?: () => void;
   timeLimit?: number;
+  lobbyId: string;
 }
 
 const clueIcons: Record<string, typeof Calendar> = {
@@ -46,6 +47,7 @@ export function GuesserScreen({
   onGuess,
   onRequestHint,
   timeLimit = 120,
+  lobbyId,
 }: GuesserScreenProps) {
   const [guessHistory, setGuessHistory] = useState<{ guess: string; correct: boolean }[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -84,7 +86,7 @@ export function GuesserScreen({
           </div>
 
           {/* Timer */}
-          <Timer seconds={timeLimit} size="sm" />
+          <Timer lobbyId={lobbyId} initialSeconds={timeLimit} size="sm" />
 
           {/* Guesses Remaining */}
           <div className="px-4 py-2 bg-card border border-border rounded-lg">
